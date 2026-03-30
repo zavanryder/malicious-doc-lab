@@ -1,5 +1,6 @@
 """CLI entrypoint for maldoc."""
 
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -14,6 +15,9 @@ app = typer.Typer(
 
 DEFAULT_REPORTS_DIR = "reports"
 DEFAULT_OUTPUT_DIR = "output"
+SUPPORTED_FORMATS_HELP = (
+    "Document format: pdf, docx, html, md, txt, csv, image, png, jpg, jpeg, xlsx, pptx, eml"
+)
 
 
 def _get_adapter(target: str, target_url: str):
@@ -22,12 +26,22 @@ def _get_adapter(target: str, target_url: str):
         from maldoc.adapters.demo import DemoAdapter
 
         return DemoAdapter(base_url=target_url)
-    elif target == "http":
+    if target == "http":
         from maldoc.adapters.http import HttpAdapter
 
         return HttpAdapter(base_url=target_url)
-    else:
-        raise typer.BadParameter(f"Unknown target adapter: {target}")
+    raise typer.BadParameter(f"Unknown target adapter: {target}")
+
+
+def _build_cli_commands(argv: list[str]) -> list[str]:
+    """Build the list of CLI commands for the report appendix."""
+    import shlex
+
+    commands = ["uv sync"]
+    # Reconstruct the maldoc invocation from sys.argv
+    args = " ".join(shlex.quote(a) for a in argv[1:]) if len(argv) > 1 else ""
+    commands.append(f"uv run maldoc {args}")
+    return commands
 
 
 def _target_label(target: str, target_url: str) -> str:
@@ -52,13 +66,14 @@ def _resolve_compose_file() -> Path:
 @app.command()
 def generate(
     attack: Annotated[str, typer.Option(help="Attack class to use")],
-    format: Annotated[str, typer.Option(help="Document format: pdf, docx, html, md, csv, image")] = "pdf",
+    format: Annotated[str, typer.Option(help=SUPPORTED_FORMATS_HELP)] = "pdf",
     output_dir: Annotated[str, typer.Option(help="Output directory for generated documents")] = DEFAULT_OUTPUT_DIR,
     payload: Annotated[str | None, typer.Option(help="Custom payload text")] = None,
     template: Annotated[str, typer.Option(help="Document template: memo, report, invoice")] = "memo",
 ):
     """Generate adversarial documents."""
     from maldoc.attacks import get_attack
+    from maldoc.coverage import assess_attack_format
     from maldoc.generate import generate_document
     from maldoc.generate.templates import get_template
 
@@ -66,6 +81,11 @@ def generate(
     tmpl = get_template(template)
     text = payload or atk.default_payload()
     result = atk.apply(text, tmpl)
+    allowed, degraded, message = assess_attack_format(result.technique, format)
+    if not allowed:
+        raise typer.BadParameter(message)
+    if degraded:
+        typer.echo(f"Warning: {message}")
     path = generate_document(result, tmpl["title"], format, output_dir)
     typer.echo(f"Generated: {path}")
 
@@ -142,7 +162,7 @@ def report(
 @app.command()
 def run(
     attack: Annotated[str, typer.Option(help="Attack(s), comma-separated")],
-    format: Annotated[str, typer.Option(help="Format(s), comma-separated")] = "pdf",
+    format: Annotated[str, typer.Option(help="Format(s), comma-separated; see generate --help")] = "pdf",
     target: Annotated[str, typer.Option(help="Target adapter")] = "demo",
     target_url: Annotated[str, typer.Option(help="Target base URL")] = "http://localhost:8000",
     output_dir: Annotated[str, typer.Option(help="Output directory for generated documents")] = DEFAULT_OUTPUT_DIR,
@@ -157,6 +177,7 @@ def run(
     Results are consolidated into a single report.
     """
     from maldoc.attacks import get_attack
+    from maldoc.coverage import assess_attack_format
     from maldoc.evaluate.evidence import ConsolidatedReport
     from maldoc.evaluate.runner import evaluate as run_eval
     from maldoc.generate import generate_document
@@ -180,6 +201,12 @@ def run(
                 typer.echo(f"[{current}/{total}] {atk_name} / {fmt}")
 
                 atk = get_attack(atk_name)
+                allowed, degraded, message = assess_attack_format(atk_name, fmt)
+                if not allowed:
+                    typer.echo(f"  Skipped: {message}")
+                    continue
+                if degraded:
+                    typer.echo(f"  Warning: {message}")
                 text = payload or atk.default_payload()
                 attack_result = atk.apply(text, tmpl)
                 doc_path = generate_document(attack_result, tmpl["title"], fmt, output_dir)
@@ -202,10 +229,12 @@ def run(
                     typer.echo(f"  {stage}: {score:.2f}")
 
         # Consolidated report
+        cli_commands = _build_cli_commands(sys.argv)
         report = ConsolidatedReport(
             timestamp=datetime.now(),
             target=_target_label(target, target_url),
             results=results,
+            cli_commands=cli_commands,
         )
         name = report_filename(report)
         json_path = Path(reports_dir) / f"{name}.json"
@@ -228,23 +257,24 @@ def demo(
     """Manage the demo app."""
     import subprocess
 
-    if action == "start":
-        compose_file = _resolve_compose_file()
-        typer.echo("Starting demo app...")
-        subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "up", "--build", "-d", "demo-app"],
-            check=True,
-        )
-        typer.echo("Demo app started at http://localhost:8000")
-    elif action == "stop":
-        compose_file = _resolve_compose_file()
-        typer.echo("Stopping demo app...")
-        subprocess.run(["docker", "compose", "-f", str(compose_file), "down"], check=True)
-        typer.echo("Demo app stopped.")
-    else:
+    if action == "reset":
         adapter = _get_adapter("demo", target_url)
         try:
             adapter.reset()
             typer.echo("Demo app state reset.")
         finally:
             adapter.close()
+        return
+
+    compose_file = _resolve_compose_file()
+    if action == "start":
+        typer.echo("Starting demo app...")
+        subprocess.run(
+            ["docker", "compose", "-f", str(compose_file), "up", "--build", "-d", "demo-app"],
+            check=True,
+        )
+        typer.echo("Demo app started at http://localhost:8000")
+    else:
+        typer.echo("Stopping demo app...")
+        subprocess.run(["docker", "compose", "-f", str(compose_file), "down"], check=True)
+        typer.echo("Demo app stopped.")

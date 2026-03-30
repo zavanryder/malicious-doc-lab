@@ -1,141 +1,147 @@
 # Code Review — 2026-03-30
 
 Comprehensive review of the malicious-doc-lab codebase across all modules:
-attacks, generators, evaluate, report, CLI, adapters, demo app, and tests.
+attacks (14), generators (10), evaluate, report, CLI, adapters, demo app,
+coverage, and tests (144).
 
 ## Issues Found and Fixed
 
-### 1. Dead code: unused space key in hidden_text.py
+### 1. xlsx generator: IndexError on empty obfuscated_variants list
 
-**File:** `src/maldoc/attacks/hidden_text.py:19`
+**File:** `src/maldoc/generate/xlsx.py:44-45`
 
-The `chars` dict maps `" "` to `ZERO_WIDTH_JOINER`, but the binary encoding
-(`format(ord(char), "08b")`) only produces `"0"` and `"1"` characters.
-The space key is never used.
+`hints.get("obfuscated_variants")` could return a truthy empty list, then
+`hints["obfuscated_variants"][0]` would raise IndexError. The code-simplifier
+subsequently simplified the guard to rely on truthy check (non-empty list).
 
-**Fix:** Removed the dead entry.
-
----
-
-### 2. Markdown report: triple-backtick injection in code blocks
-
-**File:** `src/maldoc/report/markdown_report.py:232-246`
-
-If a prompt or LLM response contains triple backticks, it breaks the
-enclosing markdown code block. This corrupts the report formatting.
-
-**Fix:** Escape triple backticks inside prompt/response content before
-embedding in code blocks.
+**Fix:** Simplified to `hints.get("obfuscated_variants")` which is falsy for
+both None and empty list.
 
 ---
 
-### 3. Report filename: colons not sanitized
+### 2. Markdown report: _avg_score division by zero
 
-**File:** `src/maldoc/report/json_report.py:14`
+**File:** `src/maldoc/report/markdown_report.py:242-247`
 
-Target URLs containing colons (e.g., `example.com:8080`) produce filenames
-with colons, which are invalid on some filesystems.
+If any EvaluationResult had an empty `scores` dict, `sum(r.scores.values()) / len(r.scores)`
+would divide by zero, crashing report generation.
 
-**Fix:** Also replace `:` in the target label.
-
----
-
-### 4. Evaluate command hardcodes template to "memo"
-
-**File:** `src/maldoc/cli.py:95`
-
-The `evaluate` command always reconstructs the attack with template "memo",
-even though the document may have been generated with a different template.
-Added `--template` option to `evaluate`.
-
-**Fix:** Added `--template` parameter to the evaluate command.
+**Fix:** Skip results with empty scores in the average calculation.
 
 ---
 
-### 5. Markdown hidden content: only 2 of 10 techniques supported
+### 3. Markdown report: pipe characters break table formatting
 
-**File:** `src/maldoc/generate/html.py:65`
+**File:** `src/maldoc/report/markdown_report.py:268`
 
-The markdown generator only embeds hidden content for `white_on_white` and
-`metadata` techniques. Other attacks that have hidden_content (off_page,
-ocr_bait, delayed_trigger, tool_routing) silently produce no hidden content
-in markdown format.
+Score justification text containing pipe characters (`|`) corrupts the
+markdown table. No escaping was applied.
 
-**Fix:** Embed hidden content as HTML comment for all techniques that have it.
+**Fix:** Escape `|` as `\|` in justification text before embedding in table rows.
 
 ---
 
-### 6. Scoring inconsistency: score_extraction redundant guard
+### 4. Documentation: stale attack/format/test counts
 
-**File:** `src/maldoc/evaluate/scoring.py:13`
+**Files:** `CLAUDE.md`, `AGENT.md`, `README.md`
 
-`payload_found_in_text` is always derived from `len(payload_fragments) > 0`
-in runner.py, making the double-check redundant. Simplified to check only
-`payload_fragments`.
+After codex added 4 new attacks and 4 new formats, documentation across
+multiple files still referenced old counts (10 attacks, 6 formats, 117 tests).
 
-**Fix:** Simplified the condition.
-
----
-
-### 7. Empty payload false positive in fragment detection
-
-**File:** `src/maldoc/evaluate/runner.py:39`
-
-`_find_payload_fragments()` with an empty payload returned `['']` because
-`"" in text` is always True in Python. This would cause false positive
-extraction scores.
-
-**Fix:** Added early return for empty/whitespace-only payloads.
+**Fix:** Updated all files:
+- CLAUDE.md: 14 attacks, 10 format generators, 144 tests, expanded attack list
+- AGENT.md: 14 attacks, 10 formats, 144 tests, expanded attack list, updated overview
+- README.md: 144 tests in project structure
 
 ---
 
-### 8. Dead code: unused Payload class in payloads.py
+### 5. Code simplification: runner.py scoring loop
 
-**File:** `src/maldoc/generate/payloads.py` (entire file)
+**File:** `src/maldoc/evaluate/runner.py:321-333`
 
-The `Payload` Pydantic model was never imported or used anywhere in the
-codebase. It duplicated fields from `AttackResult` and served no purpose.
+Four repetitive scorer calls and two parallel dict constructions replaced
+with a single loop over a `stage_scorers` mapping.
 
-**Fix:** Deleted the file.
+---
+
+### 6. Code simplification: CLI _get_adapter and demo command
+
+**File:** `src/maldoc/cli.py`
+
+Removed unnecessary `elif`/`else` after early returns in `_get_adapter`.
+Restructured `demo` command with early return for reset case.
+
+---
+
+### 7. CLI run command: unsupported pairs crash batch
+
+**File:** `src/maldoc/cli.py:193-194`
+
+When running all attacks x all formats, unsupported pairs raised
+`typer.BadParameter` which aborted the entire batch run. Users running
+`--attack "attack1,attack2" --format "fmt1,fmt2"` expected unsupported
+combos to be skipped, not crash the process.
+
+**Fix:** Changed to `continue` with a "Skipped:" message instead of raising.
+
+---
+
+### 8. Code simplification: report helper functions
+
+**File:** `src/maldoc/report/markdown_report.py:225-239`
+
+Removed unnecessary `elif` after `return` in `_score_label` and `_overall_verdict`.
 
 ---
 
 ## Issues Reviewed and Kept As-Is
 
-### HTML "XSS" in generated documents
+### Coverage matrix: text-only attacks listing IMAGE_FORMATS as degraded
 
-The review flagged unescaped HTML in the HTML generator. However, the HTML
-documents ARE the attack artifacts. They are intentionally adversarial.
-Escaping them would defeat their purpose. No fix needed.
+Attacks like chunk_split, retrieval_poison, summary_steer, etc. list
+IMAGE_FORMATS as "degraded". This is intentional: the image generator can
+render any visible_content as text-on-image, providing a degraded simulation.
+The coverage matrix correctly flags this as degraded, not supported.
 
-### Demo app missing error handling / running as root / no healthcheck
+### Generator technique completeness for new formats
 
-The demo app is intentionally vulnerable and minimal by design (see CLAUDE.md).
-Adding hardening, error handling, or security best practices would undermine
-its purpose as a test target. No fix needed.
+New generators (txt, xlsx, pptx, eml) don't handle every attack technique
+with special rendering. This is acceptable: attacks that aren't specially
+handled still render their visible_content through the default path. The
+coverage matrix's "degraded" classification covers these cases.
 
-### Chunk split single-word payload handling
+### Scoring formula: min(1.0, n/total) in score_chunking
 
-The fallback `filler + payload` for single-word payloads is correct behavior.
-A single word cannot be meaningfully split across chunks. The function
-gracefully degrades to appending the payload to the filler text. Not a bug.
+The `min()` wrapper is technically unnecessary since `n/total <= 1.0` by
+definition. Keeping it is harmless and provides defensive capping.
 
-### Scoring formula differences between stages
+### _build_match_terms deduplication stores lowercase
 
-Extraction and response use `n/3.0` (absolute threshold) while chunking uses
-`n/total` (relative proportion). This is intentional: extraction and response
-measure distinct signal types with a fixed rubric, while chunk survival is
-inherently proportional. Consistent within each metric's semantics.
+The dedup logic stores lowercased terms, which is correct since all
+matching is case-insensitive throughout runner.py.
 
-### Global state in demo pipeline.py
+### Demo pipeline: intentionally vulnerable parsing
 
-Intentional for the demo. The demo app is single-threaded uvicorn. Global
-state is reset between evaluations via the /reset endpoint. Adding dependency
-injection would over-engineer a deliberately simple target.
+The demo app's XLSX, PPTX, and EML parsers iterate all cells/shapes/headers
+including hidden content. This is intentional — the demo app is deliberately
+vulnerable to test whether attacks survive the full pipeline.
 
-### Dependency separation between pyproject.toml and demo/requirements.txt
+### New attacks: metadata field omitted
 
-Intentional. The CLI tool (pyproject.toml) and the demo app
-(demo/requirements.txt) are separate deployments. The demo runs in Docker
-with its own dependencies. They share only python-docx and Pillow by
-coincidence, not coupling.
+The 4 new attacks (encoding_obfuscation, typoglycemia, markdown_exfil,
+visual_scaling_injection) don't set the `metadata` field in AttackResult.
+This is correct: `metadata` is optional (`dict | None = None` in base.py)
+and these attacks don't use the metadata injection vector.
+
+## Previous Reviews
+
+Issues from CODE_REVIEW_1_FIXED.md (9 findings) and CODE_REVIEW_2_FIXED.md
+(6 findings) were previously addressed and remain fixed. Key fixes include:
+- Decoupled chunk/retrieval detection from extraction fragments
+- Added --payload to evaluate command
+- Added runner + CLI tests (test_evaluate_runner.py)
+- Restricted report --format to Literal["json", "markdown"]
+- Added adapter close() lifecycle
+- Removed generic keyword false positives
+- Excluded refusal from payload influence scoring
+- Updated all documentation for consolidated reporting

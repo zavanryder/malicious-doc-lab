@@ -140,7 +140,7 @@ class TestMarkdownReport:
         path = tmp_path / "report.md"
         generate_markdown_report(consolidated_report, path)
         content = path.read_text()
-        assert "## Summary" in content
+        assert "## All Results" in content
         assert "| Attack |" in content
         assert "hidden_text" in content
 
@@ -164,3 +164,39 @@ class TestMarkdownReport:
         assert "### hidden_text / pdf" in content
         assert "### metadata / docx" in content
         assert "Tests run**: 2" in content
+
+    def test_attack_summary_present_for_multi_attack(self, multi_result_report, tmp_path):
+        path = tmp_path / "report.md"
+        generate_markdown_report(multi_result_report, path)
+        content = path.read_text()
+        assert "## Attack Summary" in content
+        assert "hidden_text" in content
+        assert "metadata" in content
+
+    def test_attack_summary_absent_for_single_attack(self, consolidated_report, tmp_path):
+        path = tmp_path / "report.md"
+        generate_markdown_report(consolidated_report, path)
+        content = path.read_text()
+        assert "## Attack Summary" not in content
+
+    def test_appendix_present_when_commands_set(self, tmp_path):
+        from maldoc.evaluate.evidence import ConsolidatedReport
+
+        report = ConsolidatedReport(
+            timestamp=datetime(2026, 3, 29, 14, 30, 0),
+            target="demo",
+            results=[],
+            cli_commands=["uv sync", "uv run maldoc run --attack hidden_text --format pdf"],
+        )
+        path = tmp_path / "report.md"
+        generate_markdown_report(report, path)
+        content = path.read_text()
+        assert "## Appendix: CLI Commands" in content
+        assert "uv sync" in content
+        assert "uv run maldoc run --attack hidden_text --format pdf" in content
+
+    def test_appendix_absent_when_no_commands(self, consolidated_report, tmp_path):
+        path = tmp_path / "report.md"
+        generate_markdown_report(consolidated_report, path)
+        content = path.read_text()
+        assert "## Appendix: CLI Commands" not in content

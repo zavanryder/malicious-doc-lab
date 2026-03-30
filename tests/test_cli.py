@@ -1,6 +1,7 @@
 """CLI smoke tests."""
 
 from datetime import datetime
+import importlib.util
 
 from typer.testing import CliRunner
 
@@ -79,6 +80,8 @@ class TestCli:
             "hidden_text", "white_on_white", "metadata", "retrieval_poison",
             "ocr_bait", "off_page", "chunk_split", "summary_steer",
             "delayed_trigger", "tool_routing",
+            "encoding_obfuscation", "typoglycemia", "markdown_exfil",
+            "visual_scaling_injection",
         ]:
             result = runner.invoke(app, [
                 "generate",
@@ -89,7 +92,25 @@ class TestCli:
             assert result.exit_code == 0, f"Failed for attack: {attack}"
 
     def test_generate_all_formats(self, tmp_path):
-        for fmt in ["pdf", "docx", "html", "md", "csv", "image"]:
+        formats = [
+            "pdf",
+            "docx",
+            "html",
+            "md",
+            "txt",
+            "csv",
+            "image",
+            "png",
+            "jpg",
+            "jpeg",
+            "eml",
+        ]
+        if importlib.util.find_spec("openpyxl"):
+            formats.append("xlsx")
+        if importlib.util.find_spec("pptx"):
+            formats.append("pptx")
+
+        for fmt in formats:
             result = runner.invoke(app, [
                 "generate",
                 "--attack", "hidden_text",

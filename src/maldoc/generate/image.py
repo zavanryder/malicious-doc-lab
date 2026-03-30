@@ -37,6 +37,17 @@ def generate_image(attack_result: AttackResult, title: str, output_path: Path) -
         except OSError:
             ocr_font = ImageFont.load_default()
         draw.text((30, height - 40), attack_result.hidden_content, fill="#E0E0E0", font=ocr_font)
+    elif attack_result.technique == "visual_scaling_injection":
+        hints = attack_result.format_hints or {}
+        # Decoy region that appears benign at normal size.
+        draw.rectangle((25, height - 140, width - 25, height - 20), fill="#2E2E2E")
+        draw.text((35, height - 130), hints.get("decoy_text", "Reference chart"), fill="#A0A0A0", font=font_body)
+        try:
+            scale_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
+        except OSError:
+            scale_font = ImageFont.load_default()
+        # Low-contrast payload intended to become more legible after transformations.
+        draw.text((35, height - 45), attack_result.hidden_content, fill="#3A3A3A", font=scale_font)
     else:
         # Default: white on white, tiny font at bottom
         draw.text((30, height - 20), attack_result.hidden_content, fill="white", font=font_hidden)

@@ -83,8 +83,18 @@ uv run maldoc run --attack metadata --format docx \
 | `summary_steer` | Summarization position dominance | pdf |
 | `delayed_trigger` | Conditional activation on trigger phrase | pdf, html |
 | `tool_routing` | Fake tool-call directive injection | pdf, md |
+| `encoding_obfuscation` | Base64/hex/unicode-smuggled directives | pdf, docx, html, md, txt |
+| `typoglycemia` | Scrambled-word prompt injection variants | pdf, docx, html, md, txt |
+| `markdown_exfil` | Markdown/HTML exfil link and tracking tag injection | md, html, eml |
+| `visual_scaling_injection` | Low-visibility visual payloads for transformed image inputs | image, pdf |
 
-**Formats:** `pdf`, `docx`, `html`, `md`, `csv`, `image`
+**Formats:** `pdf`, `docx`, `html`, `md`, `txt`, `csv`, `image`, `png`, `jpg`, `jpeg`, `xlsx`, `pptx`, `eml`
+
+Not every attack/format pair has equal realism. `maldoc` uses an internal compatibility matrix:
+- unsupported pairs are automatically skipped in batch runs;
+- degraded simulations run with a warning.
+
+See `src/maldoc/coverage.py` for the full compatibility matrix.
 
 **Templates:** `memo`, `report`, `invoice`
 
@@ -98,7 +108,7 @@ reports/
   20260329_143000_demo_retrieval_poison_report.md      # Human-readable summary with verdict
 ```
 
-Each report includes per-stage scores (extraction, chunking, retrieval, response), evidence from each pipeline stage, and the raw LLM response.
+Each report includes per-stage scores (extraction, chunking, retrieval, response), evidence from each pipeline stage, and the raw LLM response. When multiple attack types are included in a single run, the Markdown report adds an **Attack Summary** table with per-attack averages above the detailed per-test results.
 
 Filename note:
 - Single attack (even with multiple formats): `{timestamp}_{target}_{attack}_report.*`
@@ -125,13 +135,13 @@ uv run pytest -m integration      # integration tests (requires Docker + Ollama)
 
 ```
 src/maldoc/       # Python package
-  attacks/        # 10 attack class implementations
-  generate/       # Document generators (6 formats)
+  attacks/        # 14 attack class implementations
+  generate/       # Document generators (13 formats)
   adapters/       # Target adapters (demo, HTTP, custom)
   evaluate/       # Evaluation pipeline and scoring
   report/         # JSON and Markdown report generators
 demo/             # FastAPI demo app (intentionally vulnerable)
 documents/        # Detailed documentation
-tests/            # Test suite (117 tests)
+tests/            # Test suite (148 tests)
 planning/         # Design docs
 ```

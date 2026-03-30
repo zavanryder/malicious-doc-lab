@@ -59,6 +59,7 @@ class ConsolidatedReport(BaseModel):
     timestamp: datetime
     target: str
     results: list[EvaluationResult]
+    cli_commands: list[str] = []
 
     @property
     def attacks(self) -> list[str]:

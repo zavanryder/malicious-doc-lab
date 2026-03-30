@@ -132,7 +132,8 @@ Upload the generated Markdown to the tool and observe whether it attempts to fol
 ```bash
 # Test all attacks against PDF format
 for attack in hidden_text white_on_white metadata retrieval_poison \
-  ocr_bait off_page chunk_split summary_steer delayed_trigger tool_routing; do
+  ocr_bait off_page chunk_split summary_steer delayed_trigger tool_routing \
+  encoding_obfuscation typoglycemia markdown_exfil visual_scaling_injection; do
   uv run maldoc run \
     --attack $attack \
     --format pdf \
@@ -141,7 +142,7 @@ for attack in hidden_text white_on_white metadata retrieval_poison \
 done
 
 # Test key attacks against DOCX (metadata is strongest here)
-for attack in metadata white_on_white retrieval_poison summary_steer; do
+for attack in metadata white_on_white retrieval_poison summary_steer encoding_obfuscation typoglycemia; do
   uv run maldoc run \
     --attack $attack \
     --format docx \
@@ -150,16 +151,34 @@ for attack in metadata white_on_white retrieval_poison summary_steer; do
 done
 
 # Test HTML-specific vectors
-for attack in off_page metadata ocr_bait; do
+for attack in off_page metadata ocr_bait markdown_exfil; do
   uv run maldoc run \
     --attack $attack \
     --format html \
     --target http \
     --target-url https://client-app.example.com
 done
+
+# Test enterprise office/email ingestion vectors
+for format in xlsx pptx eml; do
+  uv run maldoc run \
+    --attack "metadata,retrieval_poison,encoding_obfuscation,tool_routing" \
+    --format $format \
+    --target http \
+    --target-url https://client-app.example.com
+done
+
+# Test multimodal scaling vector
+for attack in ocr_bait visual_scaling_injection; do
+  uv run maldoc run \
+    --attack $attack \
+    --format "png,jpg,pdf" \
+    --target http \
+    --target-url https://client-app.example.com
+done
 ```
 
-This produces a full set of reports in `reports/` with evidence for each run.
+This produces a full set of reports in `reports/` with evidence for each run. Unsupported attack/format pairs are automatically skipped.
 
 ### Report compilation
 
@@ -171,14 +190,15 @@ reports/
   20260329_220000_client-app.example.com_hidden_text_report.md
   20260329_220530_client-app.example.com_white_on_white_report.json
   ...
-  20260329_221100_client-app.example.com_metadata_report.json
-  20260329_221100_client-app.example.com_metadata_report.md
-  ...
+  20260329_221100_client-app.example.com_multiple_report.json   # consolidated run
+  20260329_221100_client-app.example.com_multiple_report.md
 ```
 
 The filename suffix is:
 - `{attack}_report` for single-attack runs
-- `multiple_report` only when one consolidated run includes more than one attack
+- `multiple_report` when one consolidated run includes more than one attack
+
+Consolidated Markdown reports include an **Attack Summary** table with per-attack averages above the detailed **All Results** per-test table, making it easy to identify which attack vectors are most effective.
 
 Each JSON report contains the full evidence chain: extracted text, chunks, retrieved context, and the LLM's response. This is the raw evidence for your penetration test report.
 

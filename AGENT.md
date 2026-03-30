@@ -5,7 +5,7 @@ Instructions for AI coding agents working on this project. If you are Claude Cod
 ## Project overview
 
 `malicious-doc-lab` is a local-first offensive security framework that:
-- Generates adversarial documents (PDF, DOCX, HTML, Markdown, CSV, images)
+- Generates adversarial documents (PDF, DOCX, HTML, Markdown, TXT, CSV, XLSX, PPTX, EML, images)
 - Evaluates them against AI document-processing and RAG pipelines
 - Reports whether malicious payloads survived parsing, influenced retrieval, and affected responses
 - Includes a Dockerized intentionally vulnerable demo app for end-to-end testing
@@ -17,8 +17,8 @@ This is a security research tool. All adversarial content is by design. Do not a
 ```
 src/maldoc/          # Python package — the CLI tool
   cli.py             # Typer CLI entrypoint
-  generate/          # Document generators (6 formats: pdf, docx, html, md, csv, image)
-  attacks/           # 10 attack class implementations
+  generate/          # Document generators (10 formats: pdf, docx, html, md, txt, csv, xlsx, pptx, eml, image)
+  attacks/           # 14 attack class implementations
   adapters/          # Target adapters (demo app, generic HTTP, base ABC)
   evaluate/          # Evaluation pipeline, evidence models, scoring
   report/            # JSON and Markdown report output
@@ -32,7 +32,7 @@ documents/           # Detailed documentation
   file-formats.md
   walkthrough-demo.md
   walkthrough-real-targets.md
-tests/               # pytest suite (117 tests)
+tests/               # pytest suite (148 tests)
 reports/             # Evaluation reports (gitignored except .gitkeep)
 output/              # Generated adversarial documents (gitignored)
 planning/            # Design docs (PLAN.md, ARCHITECTURE.md, TASKS.md)
@@ -62,7 +62,9 @@ OLLAMA_BASE_URL=http://your-ollama-host:11434 docker compose up --build -d demo-
 6. **Testing**: Unit tests must not require Docker or Ollama. Mark integration tests with `@pytest.mark.integration`.
 7. **Output directories**: Generated documents go to `output/`. Reports go to `reports/`.
 8. **Report naming**: Reports use descriptive filenames: `{YYYYMMDD}_{HHMMSS}_{target}_{attack|multiple}_report.{json,md}` (`multiple` only when more than one attack is included in a consolidated run).
-9. **PDF Unicode**: Use DejaVu TTF fonts (not Helvetica) for Unicode support in PDF generation.
+9. **Report structure**: Markdown reports include an "Attack Summary" table (per-attack averages) when multiple attack types are present, above the per-test "All Results" table.
+10. **Batch runs**: CLI `run` accepts comma-separated `--attack` and `--format` values. Unsupported pairs are automatically skipped. The compatibility matrix is in `src/maldoc/coverage.py`.
+11. **PDF Unicode**: Use DejaVu TTF fonts (not Helvetica) for Unicode support in PDF generation.
 
 ## Key interfaces
 
@@ -71,7 +73,7 @@ OLLAMA_BASE_URL=http://your-ollama-host:11434 docker compose up --build -d demo-
 - `apply(payload, template) -> AttackResult` method
 - `default_payload() -> str` for default adversarial text
 
-All 10 attacks: `hidden_text`, `white_on_white`, `metadata`, `retrieval_poison`, `ocr_bait`, `off_page`, `chunk_split`, `summary_steer`, `delayed_trigger`, `tool_routing`
+All 14 attacks: `hidden_text`, `white_on_white`, `metadata`, `retrieval_poison`, `ocr_bait`, `off_page`, `chunk_split`, `summary_steer`, `delayed_trigger`, `tool_routing`, `encoding_obfuscation`, `typoglycemia`, `markdown_exfil`, `visual_scaling_injection`
 
 **Adapters** implement `BaseAdapter` (see `src/maldoc/adapters/base.py`):
 - `upload(file_path) -> UploadResult`

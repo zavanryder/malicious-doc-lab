@@ -9,9 +9,13 @@ from maldoc.attacks.base import AttackResult
 from maldoc.generate import generate_document, list_formats
 from maldoc.generate.csv_gen import generate_csv
 from maldoc.generate.docx import generate_docx
+from maldoc.generate.eml import generate_eml
 from maldoc.generate.html import generate_html, generate_markdown
 from maldoc.generate.image import generate_image
+from maldoc.generate.pptx_gen import generate_pptx
 from maldoc.generate.pdf import generate_pdf
+from maldoc.generate.txt_gen import generate_txt
+from maldoc.generate.xlsx import generate_xlsx
 
 
 @pytest.fixture
@@ -48,13 +52,27 @@ def metadata_result():
 class TestListFormats:
     def test_all_formats_present(self):
         formats = list_formats()
-        assert set(formats) == {"pdf", "docx", "html", "md", "csv", "image"}
+        assert set(formats) == {
+            "pdf",
+            "docx",
+            "html",
+            "md",
+            "txt",
+            "csv",
+            "image",
+            "png",
+            "jpg",
+            "jpeg",
+            "xlsx",
+            "pptx",
+            "eml",
+        }
 
 
 class TestGenerateDocument:
     def test_unknown_format(self, attack_result):
         with pytest.raises(ValueError, match="Unknown format"):
-            generate_document(attack_result, "Test", "xlsx")
+            generate_document(attack_result, "Test", "odt")
 
     def test_generate_pdf(self, attack_result, tmp_path):
         path = generate_document(attack_result, "Test", "pdf", str(tmp_path))
@@ -79,6 +97,11 @@ class TestGenerateDocument:
         content = path.read_text()
         assert "# Test" in content
 
+    def test_generate_txt(self, attack_result, tmp_path):
+        path = generate_document(attack_result, "Test", "txt", str(tmp_path))
+        assert path.exists()
+        assert path.suffix == ".txt"
+
     def test_generate_csv(self, attack_result, tmp_path):
         path = generate_document(attack_result, "Test", "csv", str(tmp_path))
         assert path.exists()
@@ -88,6 +111,33 @@ class TestGenerateDocument:
         path = generate_document(attack_result, "Test", "image", str(tmp_path))
         assert path.exists()
         assert path.suffix == ".png"
+
+    def test_generate_png_alias(self, attack_result, tmp_path):
+        path = generate_document(attack_result, "Test", "png", str(tmp_path))
+        assert path.exists()
+        assert path.suffix == ".png"
+
+    def test_generate_jpg_alias(self, attack_result, tmp_path):
+        path = generate_document(attack_result, "Test", "jpg", str(tmp_path))
+        assert path.exists()
+        assert path.suffix == ".jpg"
+
+    def test_generate_eml(self, attack_result, tmp_path):
+        path = generate_document(attack_result, "Test", "eml", str(tmp_path))
+        assert path.exists()
+        assert path.suffix == ".eml"
+
+    def test_generate_xlsx(self, attack_result, tmp_path):
+        pytest.importorskip("openpyxl")
+        path = generate_document(attack_result, "Test", "xlsx", str(tmp_path))
+        assert path.exists()
+        assert path.suffix == ".xlsx"
+
+    def test_generate_pptx(self, attack_result, tmp_path):
+        pytest.importorskip("pptx")
+        path = generate_document(attack_result, "Test", "pptx", str(tmp_path))
+        assert path.exists()
+        assert path.suffix == ".pptx"
 
 
 class TestPdfGenerator:
@@ -249,3 +299,37 @@ class TestCsvGenerator:
         # Last row should contain the hidden payload
         all_text = " ".join(" ".join(row) for row in rows)
         assert "SECRET PAYLOAD" in all_text
+
+
+class TestTxtGenerator:
+    def test_creates_file(self, attack_result, tmp_path):
+        path = tmp_path / "test.txt"
+        result = generate_txt(attack_result, "Test Title", path)
+        assert result.exists()
+        assert "Test Title" in result.read_text()
+
+
+class TestEmlGenerator:
+    def test_creates_file(self, attack_result, tmp_path):
+        path = tmp_path / "test.eml"
+        result = generate_eml(attack_result, "Test Title", path)
+        assert result.exists()
+        assert b"Subject: Test Title" in result.read_bytes()
+
+
+class TestXlsxGenerator:
+    def test_creates_file(self, attack_result, tmp_path):
+        pytest.importorskip("openpyxl")
+        path = tmp_path / "test.xlsx"
+        result = generate_xlsx(attack_result, "Test Title", path)
+        assert result.exists()
+        assert result.stat().st_size > 0
+
+
+class TestPptxGenerator:
+    def test_creates_file(self, attack_result, tmp_path):
+        pytest.importorskip("pptx")
+        path = tmp_path / "test.pptx"
+        result = generate_pptx(attack_result, "Test Title", path)
+        assert result.exists()
+        assert result.stat().st_size > 0

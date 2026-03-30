@@ -72,6 +72,20 @@ def generate_pdf(attack_result: AttackResult, title: str, output_path: Path) -> 
         pdf.multi_cell(0, 3, attack_result.hidden_content)
         pdf.set_text_color(0, 0, 0)
 
+    # Visual scaling injection: low-contrast payload inside a dense footer block.
+    if attack_result.technique == "visual_scaling_injection":
+        hints = attack_result.format_hints or {}
+        pdf.ln(8)
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font(font_family, "", 9)
+        pdf.set_text_color(60, 60, 60)
+        pdf.multi_cell(0, 5, hints.get("decoy_text", "Reference visualization"))
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font(font_family, "", 6)
+        pdf.set_text_color(75, 75, 75)
+        pdf.multi_cell(0, 3, attack_result.hidden_content)
+        pdf.set_text_color(0, 0, 0)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(output_path))
     return output_path

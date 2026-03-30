@@ -9,10 +9,14 @@ from maldoc.attacks.metadata import MetadataAttack
 from maldoc.attacks.retrieval_poison import RetrievalPoisonAttack
 from maldoc.attacks.chunk_split import ChunkSplitAttack, split_payload_for_chunks
 from maldoc.attacks.delayed_trigger import DelayedTriggerAttack
+from maldoc.attacks.encoding_obfuscation import EncodingObfuscationAttack
+from maldoc.attacks.markdown_exfil import MarkdownExfilAttack
 from maldoc.attacks.ocr_bait import OcrBaitAttack
 from maldoc.attacks.off_page import OffPageAttack
 from maldoc.attacks.summary_steer import SummarySteerAttack
 from maldoc.attacks.tool_routing import ToolRoutingAttack
+from maldoc.attacks.typoglycemia import TypoglycemiaAttack, typoglycemia_transform
+from maldoc.attacks.visual_scaling_injection import VisualScalingInjectionAttack
 from maldoc.attacks.white_on_white import WhiteOnWhiteAttack
 
 
@@ -32,6 +36,8 @@ class TestAttackRegistry:
             "hidden_text", "white_on_white", "metadata", "retrieval_poison",
             "ocr_bait", "off_page", "chunk_split", "summary_steer",
             "delayed_trigger", "tool_routing",
+            "encoding_obfuscation", "typoglycemia", "markdown_exfil",
+            "visual_scaling_injection",
         ]
         for name in expected:
             assert name in attacks
@@ -256,3 +262,61 @@ class TestToolRoutingAttack:
         atk = ToolRoutingAttack()
         result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
         assert SAMPLE_TEMPLATE["body"] in result.visible_content
+
+
+class TestEncodingObfuscationAttack:
+    def test_apply(self):
+        atk = EncodingObfuscationAttack()
+        result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
+        assert result.technique == "encoding_obfuscation"
+        assert result.hidden_content == SAMPLE_PAYLOAD
+
+    def test_format_hints_include_variants(self):
+        atk = EncodingObfuscationAttack()
+        result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
+        assert "obfuscated_variants" in result.format_hints
+        assert len(result.format_hints["obfuscated_variants"]) >= 3
+
+
+class TestTypoglycemiaAttack:
+    def test_apply(self):
+        atk = TypoglycemiaAttack()
+        result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
+        assert result.technique == "typoglycemia"
+        assert result.hidden_content == SAMPLE_PAYLOAD
+
+    def test_payload_is_obfuscated(self):
+        transformed = typoglycemia_transform("ignore previous instructions")
+        assert transformed != "ignore previous instructions"
+
+    def test_format_hint_contains_obfuscated_payload(self):
+        atk = TypoglycemiaAttack()
+        result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
+        assert "obfuscated_payload" in result.format_hints
+
+
+class TestMarkdownExfilAttack:
+    def test_apply(self):
+        atk = MarkdownExfilAttack()
+        result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
+        assert result.technique == "markdown_exfil"
+        assert result.hidden_content == SAMPLE_PAYLOAD
+
+    def test_exfil_url_in_hints(self):
+        atk = MarkdownExfilAttack()
+        result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
+        assert "exfil_url" in result.format_hints
+        assert "collector.attacker.invalid" in result.format_hints["exfil_url"]
+
+
+class TestVisualScalingInjectionAttack:
+    def test_apply(self):
+        atk = VisualScalingInjectionAttack()
+        result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
+        assert result.technique == "visual_scaling_injection"
+        assert result.hidden_content == SAMPLE_PAYLOAD
+
+    def test_format_hints_present(self):
+        atk = VisualScalingInjectionAttack()
+        result = atk.apply(SAMPLE_PAYLOAD, SAMPLE_TEMPLATE)
+        assert result.format_hints["intended_transform"] == "downscale"

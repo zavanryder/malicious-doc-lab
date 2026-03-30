@@ -34,6 +34,8 @@ def _payload_phrases(payload: str) -> list[str]:
 
 def _find_payload_fragments(text: str, payload: str) -> list[str]:
     """Find fragments of the payload in the text."""
+    if not payload.strip():
+        return []
     fragments = []
     # Check for full payload
     if payload.lower() in text.lower():

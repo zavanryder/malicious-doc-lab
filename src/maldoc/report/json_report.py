@@ -11,7 +11,7 @@ def report_filename(report: ConsolidatedReport) -> str:
     Format: {YYYYMMDD}_{HHMMSS}_{target}_{attack_or_multiple}_report
     """
     ts = report.timestamp.strftime("%Y%m%d_%H%M%S")
-    target = report.target.replace("://", "_").replace("/", "_").rstrip("_")
+    target = report.target.replace("://", "_").replace("/", "_").replace(":", "_").rstrip("_")
     label = report.test_label
     return f"{ts}_{target}_{label}_report"
 

@@ -10,7 +10,7 @@ from maldoc.evaluate.evidence import (
 
 def score_extraction(evidence: ExtractionEvidence) -> tuple[float, str]:
     """Score payload survival through text extraction. Returns (score, justification)."""
-    if not evidence.payload_found_in_text or len(evidence.payload_fragments) == 0:
+    if not evidence.payload_fragments:
         return 0.0, "No payload fragments found in extracted text."
     n = len(evidence.payload_fragments)
     score = min(1.0, n / 3.0)

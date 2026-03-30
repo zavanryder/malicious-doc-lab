@@ -78,6 +78,7 @@ def evaluate(
     target_url: Annotated[str, typer.Option(help="Target base URL")] = "http://localhost:8000",
     query: Annotated[str | None, typer.Option(help="Custom query for evaluation")] = None,
     payload: Annotated[str | None, typer.Option(help="Payload used in the document")] = None,
+    template: Annotated[str, typer.Option(help="Document template used for generation")] = "memo",
     reports_dir: Annotated[str, typer.Option(help="Output directory for reports")] = DEFAULT_REPORTS_DIR,
 ):
     """Evaluate a document against a target."""
@@ -92,7 +93,7 @@ def evaluate(
     try:
         from maldoc.generate.templates import get_template
 
-        tmpl = get_template("memo")
+        tmpl = get_template(template)
         attack_payload = payload or atk.default_payload()
         attack_result = atk.apply(attack_payload, tmpl)
         result = run_eval(adapter, attack_result, Path(file), query)
@@ -184,7 +185,17 @@ def run(
                 doc_path = generate_document(attack_result, tmpl["title"], fmt, output_dir)
                 typer.echo(f"  Generated: {doc_path}")
 
-                result = run_eval(adapter, attack_result, doc_path, query)
+                for attempt in range(3):
+                    try:
+                        result = run_eval(adapter, attack_result, doc_path, query)
+                        break
+                    except Exception as exc:
+                        if attempt < 2:
+                            import time
+                            typer.echo(f"  Retry {attempt + 1}/2 after error: {exc}")
+                            time.sleep(5)
+                        else:
+                            raise
                 results.append(result)
 
                 for stage, score in result.scores.items():

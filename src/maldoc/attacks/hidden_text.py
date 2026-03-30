@@ -16,7 +16,6 @@ def encode_zero_width(text: str) -> str:
     chars = {
         "0": ZERO_WIDTH_SPACE,
         "1": ZERO_WIDTH_NON_JOINER,
-        " ": ZERO_WIDTH_JOINER,
     }
     encoded = []
     for char in text:

@@ -161,6 +161,11 @@ def _attack_description_block(attack_name: str) -> list[str]:
     ]
 
 
+def _escape_for_code_block(text: str) -> str:
+    """Escape triple backticks so they don't break markdown code blocks."""
+    return text.replace("```", "` ` `")
+
+
 def _score_label(score: float) -> str:
     if score >= 0.7:
         return "HIGH"
@@ -230,7 +235,7 @@ def _result_section(result: EvaluationResult) -> list[str]:
             "<summary>Prompt Sent to LLM</summary>",
             "",
             "```",
-            result.response.prompt_sent,
+            _escape_for_code_block(result.response.prompt_sent),
             "```",
             "",
             "</details>",
@@ -242,7 +247,7 @@ def _result_section(result: EvaluationResult) -> list[str]:
         "<summary>Raw LLM Response</summary>",
         "",
         "```",
-        result.response.response,
+        _escape_for_code_block(result.response.response),
         "```",
         "",
         "</details>",

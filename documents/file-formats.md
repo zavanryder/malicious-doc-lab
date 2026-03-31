@@ -24,7 +24,7 @@ This document describes each file format `maldoc` can generate, why that format 
 `maldoc` enforces an attack/format compatibility matrix:
 
 - Unsupported pairs fail with an error.
-- Degraded simulations are allowed but explicitly warned in CLI output.
+- Degraded simulations are allowed but explicitly warned in CLI output. Unsupported pairs are also carried into consolidated report metadata as skipped combinations.
 
 Use these warnings as signal that a format cannot faithfully represent the chosen technique.
 
@@ -92,7 +92,7 @@ Markdown is used extensively in documentation, knowledge bases, wikis, and devel
 **How maldoc uses it:**
 
 - **Normal text**: Standard Markdown body content.
-- **HTML comments**: Hidden payload content is embedded in HTML comments (`<!-- payload -->`) for techniques that need an out-of-band channel. Many Markdown processors preserve comments, and some AI pipelines extract them.
+- **Attack-preserving body content**: Markdown now carries only the attack's visible or transformed content; it no longer appends a generic raw-payload comment that would distort transformed attacks.
 - **Zero-width characters**: Embedded directly in visible text for hidden_text attacks.
 
 **Why it matters:** Markdown is the default format for many AI knowledge bases (Notion exports, GitHub wikis, Confluence exports). HTML comments in Markdown are often preserved through the processing pipeline because stripping them requires explicit handling.
@@ -108,7 +108,7 @@ CSV files are common in data pipelines, analytics tools, and spreadsheet-based w
 **How maldoc uses it:**
 
 - **Visible rows**: Document body is split into rows across "Title" and "Content" columns.
-- **Hidden payload**: A final row contains the payload in the "Notes" column, with empty Title and Content fields.
+- **Transformed carriers only**: Auxiliary "Notes" cells are used only for transformed carriers such as encoded variants or size-zero text hints, not as a generic raw-payload fallback.
 
 **Why it matters:** CSV parsing is straightforward -- every cell is text. The attack surface is that AI pipelines often process all cells without distinguishing between headers, data, and notes columns. A payload in any cell becomes part of the ingested content. CSV is also used in data poisoning scenarios where large datasets are fed to AI systems.
 
@@ -124,8 +124,8 @@ XLSX is common in enterprise analytics and financial workflows and is frequently
 
 - **Visible content**: Rows in the main worksheet.
 - **Metadata**: Payload injection into workbook properties (creator, subject, keywords, description).
-- **Hidden cells**: Payload can be placed in far-away or hidden columns.
-- **Obfuscation payloads**: Encoded variants can be inserted into notes-style columns.
+- **Hidden cells**: Payload can be placed in far-away or hidden columns for techniques that actually rely on hidden carriers.
+- **Obfuscation payloads**: Encoded or transformed variants can be inserted into notes-style columns without leaking the literal payload.
 
 **Why it matters:** Spreadsheet ingestion pipelines often flatten all cell values and metadata into text, making “non-primary” columns and workbook metadata useful injection channels.
 
@@ -141,8 +141,8 @@ PPTX files are widely used in executive reporting and often processed in enterpr
 
 - **Visible content**: Main slide text box content.
 - **Metadata**: Core presentation properties (author/subject/keywords/comments).
-- **Off-slide text**: Payload can be placed beyond normal visible bounds.
-- **Low-visibility text**: Very small white text in footer regions.
+- **Off-slide text**: Payload can be placed beyond normal visible bounds for `off_page`.
+- **Low-visibility text**: Very small white text is used only for techniques that rely on hidden rendered text rather than as a generic fallback.
 
 **Why it matters:** Slide parsing commonly extracts all shape text and presentation metadata, not just what is visible in presenter mode.
 

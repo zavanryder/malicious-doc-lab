@@ -5,12 +5,16 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
-COPY requirements.txt .
+COPY demo-chatbot/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY demo-chatbot ./demo-chatbot
+COPY shared_pipeline.py ./shared_pipeline.py
 
 EXPOSE 8001
+
+WORKDIR /app/demo-chatbot
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -5,12 +5,16 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
-COPY requirements.txt .
+COPY demo/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY demo ./demo
+COPY shared_pipeline.py ./shared_pipeline.py
 
 EXPOSE 8000
+
+WORKDIR /app/demo
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

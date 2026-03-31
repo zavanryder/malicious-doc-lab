@@ -202,7 +202,8 @@ BLACK_BOX=true docker compose up --build -d demo-chatbot
 ```
 
 In black-box mode:
-- The `/extracted`, `/chunks`, and `/reset` endpoints are hidden (return 404)
+- The `/extracted` and `/chunks` endpoints are hidden (return 404)
+- `/reset` remains available so each evaluation starts from a clean state
 - The `ChatbotAdapter` handles this gracefully
 - Extraction and chunking scores show as "N/A" in reports
 - Retrieval and response scores are still measured from the chat responses

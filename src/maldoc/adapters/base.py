@@ -6,6 +6,10 @@ from pathlib import Path
 from pydantic import BaseModel
 
 
+class EvidenceUnavailableError(RuntimeError):
+    """Raised when a target does not expose extraction/chunk evidence."""
+
+
 class UploadResult(BaseModel):
     """Result of uploading a document to a target."""
 

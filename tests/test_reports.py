@@ -13,6 +13,7 @@ from maldoc.evaluate.evidence import (
     ExtractionEvidence,
     ResponseEvidence,
     RetrievalEvidence,
+    SkippedCombination,
 )
 from maldoc.report.json_report import generate_json_report, report_filename
 from maldoc.report.markdown_report import generate_markdown_report
@@ -45,6 +46,7 @@ def evaluation_result():
             payload_influenced_response=True,
             influence_indicators=["phrase_detected: access granted"],
         ),
+        evidence_mode="white_box",
         scores={
             "extraction_survival": 0.33,
             "chunk_survival": 0.5,
@@ -60,6 +62,7 @@ def consolidated_report(evaluation_result):
         timestamp=datetime(2026, 3, 29, 14, 30, 0),
         target="demo",
         results=[evaluation_result],
+        execution_mode="white_box",
     )
 
 
@@ -72,6 +75,9 @@ def multi_result_report(evaluation_result):
         timestamp=datetime(2026, 3, 29, 14, 30, 0),
         target="demo",
         results=[evaluation_result, second],
+        requested_attacks=["hidden_text", "metadata"],
+        requested_formats=["pdf", "docx"],
+        execution_mode="white_box",
     )
 
 
@@ -135,6 +141,7 @@ class TestMarkdownReport:
         content = path.read_text()
         assert "# Evaluation Report" in content
         assert "demo" in content
+        assert "Execution mode" in content
 
     def test_contains_summary_table(self, consolidated_report, tmp_path):
         path = tmp_path / "report.md"
@@ -172,6 +179,7 @@ class TestMarkdownReport:
         assert "## Attack Summary" in content
         assert "hidden_text" in content
         assert "metadata" in content
+        assert "Requested attacks" in content
 
     def test_attack_summary_absent_for_single_attack(self, consolidated_report, tmp_path):
         path = tmp_path / "report.md"
@@ -187,6 +195,7 @@ class TestMarkdownReport:
             target="demo",
             results=[],
             cli_commands=["uv sync", "uv run maldoc run --attack hidden_text --format pdf"],
+            execution_mode="white_box",
         )
         path = tmp_path / "report.md"
         generate_markdown_report(report, path)
@@ -225,6 +234,7 @@ class TestMarkdownReport:
                 payload_influenced_response=True,
                 influence_indicators=["phrase_detected: access granted"],
             ),
+            evidence_mode="black_box",
             scores={
                 "extraction_survival": None,
                 "chunk_survival": None,
@@ -240,6 +250,7 @@ class TestMarkdownReport:
             timestamp=datetime(2026, 3, 30, 12, 0, 0),
             target="chatbot",
             results=[result],
+            execution_mode="black_box",
         )
         path = tmp_path / "report.md"
         generate_markdown_report(report, path)
@@ -265,6 +276,7 @@ class TestMarkdownReport:
                 query="q", response="ok", payload_influenced_response=False,
                 influence_indicators=[],
             ),
+            evidence_mode="black_box",
             scores={
                 "extraction_survival": None,
                 "chunk_survival": None,
@@ -276,6 +288,7 @@ class TestMarkdownReport:
             timestamp=datetime(2026, 3, 30, 12, 0, 0),
             target="chatbot",
             results=[result],
+            execution_mode="black_box",
         )
         path = tmp_path / "report.json"
         generate_json_report(report, path)
@@ -283,3 +296,23 @@ class TestMarkdownReport:
         assert loaded.results[0].scores["extraction_survival"] is None
         assert loaded.results[0].scores["chunk_survival"] is None
         assert loaded.results[0].scores["retrieval_influence"] == 0.0
+
+    def test_skipped_combinations_are_rendered(self, consolidated_report, tmp_path):
+        report = consolidated_report.model_copy(
+            update={
+                "requested_attacks": ["hidden_text", "ocr_bait"],
+                "requested_formats": ["pdf", "docx"],
+                "skipped_combinations": [
+                    SkippedCombination(
+                        attack_name="ocr_bait",
+                        document_format="docx",
+                        reason="ocr_bait is not supported for docx.",
+                    )
+                ],
+            }
+        )
+        path = tmp_path / "report.md"
+        generate_markdown_report(report, path)
+        content = path.read_text()
+        assert "## Skipped Combinations" in content
+        assert "ocr_bait" in content

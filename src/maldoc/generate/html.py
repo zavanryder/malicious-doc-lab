@@ -65,12 +65,7 @@ def generate_markdown(
     attack_result: AttackResult, title: str, output_path: Path
 ) -> Path:
     """Generate a Markdown file containing the attack payload."""
-    # Hidden content via HTML comment (zero-width chars are already in visible_content)
-    hidden = ""
-    if attack_result.hidden_content and attack_result.technique != "hidden_text":
-        hidden = f"\n\n<!-- {attack_result.hidden_content} -->"
-
-    md = f"# {title}\n\n{attack_result.visible_content}{hidden}\n"
+    md = f"# {title}\n\n{attack_result.visible_content}\n"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(md)

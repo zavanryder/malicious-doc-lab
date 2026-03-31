@@ -9,6 +9,7 @@ from maldoc.attacks.base import AttackResult
 def generate_csv(attack_result: AttackResult, title: str, output_path: Path) -> Path:
     """Generate a CSV file with hidden payload in data cells."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    hints = attack_result.format_hints or {}
 
     with output_path.open("w", newline="") as f:
         writer = csv.writer(f)
@@ -20,7 +21,12 @@ def generate_csv(attack_result: AttackResult, title: str, output_path: Path) -> 
             if line:
                 writer.writerow([f"Row {i + 1}", line, ""])
 
-        # Hidden payload row — payload embedded in notes column
-        writer.writerow(["", "", attack_result.hidden_content])
+        # Preserve transformed carriers without leaking the literal payload.
+        if hints.get("font_size_zero_text"):
+            writer.writerow(["", "", hints["font_size_zero_text"]])
+        elif hints.get("obfuscated_variants"):
+            writer.writerow(["", "", hints["obfuscated_variants"][0]])
+        elif hints.get("obfuscated_payload"):
+            writer.writerow(["", "", hints["obfuscated_payload"]])
 
     return output_path

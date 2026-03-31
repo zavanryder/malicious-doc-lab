@@ -4,7 +4,12 @@ from pathlib import Path
 
 import httpx
 
-from maldoc.adapters.base import BaseAdapter, QueryResult, UploadResult
+from maldoc.adapters.base import (
+    BaseAdapter,
+    EvidenceUnavailableError,
+    QueryResult,
+    UploadResult,
+)
 
 
 class ChatbotAdapter(BaseAdapter):
@@ -13,7 +18,6 @@ class ChatbotAdapter(BaseAdapter):
     def __init__(self, base_url: str = "http://localhost:8001"):
         self.base_url = base_url.rstrip("/")
         self.client = httpx.Client(base_url=self.base_url, timeout=300.0)
-        self._evidence_unavailable = False
 
     def upload(self, file_path: Path) -> UploadResult:
         with file_path.open("rb") as f:
@@ -49,8 +53,7 @@ class ChatbotAdapter(BaseAdapter):
             return response.json().get("extracted_text", "")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                self._evidence_unavailable = True
-                return ""
+                raise EvidenceUnavailableError("Extraction evidence endpoint unavailable") from exc
             raise
 
     def get_chunks(self) -> list[str]:
@@ -60,8 +63,7 @@ class ChatbotAdapter(BaseAdapter):
             return response.json().get("chunks", [])
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                self._evidence_unavailable = True
-                return []
+                raise EvidenceUnavailableError("Chunk evidence endpoint unavailable") from exc
             raise
 
     def reset(self) -> None:

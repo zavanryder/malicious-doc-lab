@@ -1,8 +1,9 @@
 """Evidence capture models."""
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ExtractionEvidence(BaseModel):
@@ -49,8 +50,17 @@ class EvaluationResult(BaseModel):
     chunking: ChunkEvidence
     retrieval: RetrievalEvidence
     response: ResponseEvidence
+    evidence_mode: Literal["white_box", "black_box", "mixed"] = "white_box"
     scores: dict[str, float | None]
-    score_justifications: dict[str, str] = {}
+    score_justifications: dict[str, str] = Field(default_factory=dict)
+
+
+class SkippedCombination(BaseModel):
+    """Requested attack/format pair skipped during a batch run."""
+
+    attack_name: str
+    document_format: str
+    reason: str
 
 
 class ConsolidatedReport(BaseModel):
@@ -59,7 +69,11 @@ class ConsolidatedReport(BaseModel):
     timestamp: datetime
     target: str
     results: list[EvaluationResult]
-    cli_commands: list[str] = []
+    cli_commands: list[str] = Field(default_factory=list)
+    requested_attacks: list[str] = Field(default_factory=list)
+    requested_formats: list[str] = Field(default_factory=list)
+    skipped_combinations: list[SkippedCombination] = Field(default_factory=list)
+    execution_mode: Literal["white_box", "black_box", "mixed"] = "white_box"
 
     @property
     def attacks(self) -> list[str]:

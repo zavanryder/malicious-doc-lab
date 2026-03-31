@@ -34,7 +34,22 @@ def generate_pptx(attack_result: AttackResult, title: str, output_path: Path) ->
         props.keywords = attack_result.metadata.get("keywords", "")
         props.comments = attack_result.metadata.get("description", "")
 
-    hidden_text = attack_result.hidden_content
+    hints = attack_result.format_hints or {}
+    hidden_text = None
+    if attack_result.technique == "white_on_white":
+        hidden_text = attack_result.hidden_content
+    elif attack_result.technique == "off_page":
+        hidden_text = attack_result.hidden_content
+    elif hints.get("obfuscated_variants"):
+        hidden_text = hints["obfuscated_variants"][0]
+    elif hints.get("obfuscated_payload"):
+        hidden_text = hints["obfuscated_payload"]
+
+    if not hidden_text:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        prs.save(str(output_path))
+        return output_path
+
     if attack_result.technique == "off_page":
         hidden_box = slide.shapes.add_textbox(
             Inches(12),

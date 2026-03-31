@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
+import httpx
 import typer
 
 app = typer.Typer(
@@ -24,6 +25,8 @@ def _resolve_target_url(target: str, target_url: str) -> str:
     """Resolve target URL, applying defaults when not explicitly provided."""
     if target_url:
         return target_url
+    if target == "http":
+        raise typer.BadParameter("--target-url is required when --target=http")
     defaults = {
         "demo": "http://localhost:8000",
         "chatbot": "http://localhost:8001",
@@ -65,6 +68,24 @@ def _target_label(target: str, target_url: str) -> str:
     if target in ("demo", "chatbot"):
         return target
     return target_url.split("://")[-1].split("/")[0].replace(":", "_")
+
+
+def _is_transient_eval_error(exc: Exception) -> bool:
+    """Return whether an evaluation error is likely transient."""
+    transient_types = (
+        httpx.TimeoutException,
+        httpx.NetworkError,
+        httpx.RemoteProtocolError,
+    )
+    return isinstance(exc, transient_types)
+
+
+def _aggregate_execution_mode(results: list) -> str:
+    """Collapse per-result evidence modes into a report-level mode."""
+    modes = {getattr(result, "evidence_mode", "white_box") for result in results}
+    if len(modes) == 1:
+        return modes.pop()
+    return "mixed"
 
 
 def _resolve_compose_file() -> Path:
@@ -119,13 +140,14 @@ def evaluate(
 ):
     """Evaluate a document against a target."""
     from maldoc.attacks import get_attack
-    from maldoc.evaluate.evidence import ConsolidatedReport
+    from maldoc.evaluate.evidence import ConsolidatedReport, SkippedCombination
     from maldoc.evaluate.runner import evaluate as run_eval
     from maldoc.report.json_report import generate_json_report, report_filename
     from maldoc.report.markdown_report import generate_markdown_report
 
     atk = get_attack(attack)
-    adapter = _get_adapter(target, target_url)
+    resolved_url = _resolve_target_url(target, target_url)
+    adapter = _get_adapter(target, resolved_url)
     try:
         from maldoc.generate.templates import get_template
 
@@ -136,8 +158,11 @@ def evaluate(
 
         report = ConsolidatedReport(
             timestamp=datetime.now(),
-            target=_target_label(target, target_url),
+            target=_target_label(target, resolved_url),
             results=[result],
+            requested_attacks=[attack],
+            requested_formats=[Path(file).suffix.lstrip(".")],
+            execution_mode=result.evidence_mode,
         )
         name = report_filename(report)
         json_path = Path(reports_dir) / f"{name}.json"
@@ -160,7 +185,7 @@ def report(
     reports_dir: Annotated[str, typer.Option(help="Output directory for reports")] = DEFAULT_REPORTS_DIR,
 ):
     """Generate a report from evaluation results."""
-    from maldoc.evaluate.evidence import ConsolidatedReport
+    from maldoc.evaluate.evidence import ConsolidatedReport, SkippedCombination
     from maldoc.report.json_report import generate_json_report, report_filename
     from maldoc.report.markdown_report import generate_markdown_report
 
@@ -195,7 +220,7 @@ def run(
     """
     from maldoc.attacks import get_attack
     from maldoc.coverage import assess_attack_format
-    from maldoc.evaluate.evidence import ConsolidatedReport
+    from maldoc.evaluate.evidence import ConsolidatedReport, SkippedCombination
     from maldoc.evaluate.runner import evaluate as run_eval
     from maldoc.generate import generate_document
     from maldoc.generate.templates import get_template
@@ -205,10 +230,12 @@ def run(
     attacks = [a.strip() for a in attack.split(",")]
     formats = [f.strip() for f in format.split(",")]
     tmpl = get_template(template)
-    adapter = _get_adapter(target, target_url)
+    resolved_url = _resolve_target_url(target, target_url)
+    adapter = _get_adapter(target, resolved_url)
 
     try:
         results = []
+        skipped = []
         total = len(attacks) * len(formats)
         current = 0
 
@@ -221,6 +248,13 @@ def run(
                 allowed, degraded, message = assess_attack_format(atk_name, fmt)
                 if not allowed:
                     typer.echo(f"  Skipped: {message}")
+                    skipped.append(
+                        SkippedCombination(
+                            attack_name=atk_name,
+                            document_format=fmt,
+                            reason=message,
+                        )
+                    )
                     continue
                 if degraded:
                     typer.echo(f"  Warning: {message}")
@@ -234,7 +268,7 @@ def run(
                         result = run_eval(adapter, attack_result, doc_path, query)
                         break
                     except Exception as exc:
-                        if attempt < 2:
+                        if attempt < 2 and _is_transient_eval_error(exc):
                             import time
                             typer.echo(f"  Retry {attempt + 1}/2 after error: {exc}")
                             time.sleep(5)
@@ -250,9 +284,13 @@ def run(
         cli_commands = _build_cli_commands(sys.argv)
         report = ConsolidatedReport(
             timestamp=datetime.now(),
-            target=_target_label(target, target_url),
+            target=_target_label(target, resolved_url),
             results=results,
             cli_commands=cli_commands,
+            requested_attacks=attacks,
+            requested_formats=formats,
+            skipped_combinations=skipped,
+            execution_mode=_aggregate_execution_mode(results),
         )
         name = report_filename(report)
         json_path = Path(reports_dir) / f"{name}.json"
@@ -263,6 +301,8 @@ def run(
         typer.echo("")
         typer.echo(f"Reports: {json_path}, {md_path}")
         typer.echo(f"  {len(results)} tests consolidated into single report")
+        if skipped:
+            typer.echo(f"  {len(skipped)} combinations skipped")
     finally:
         adapter.close()
 

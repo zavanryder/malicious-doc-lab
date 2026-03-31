@@ -3,6 +3,8 @@
 from datetime import datetime
 import importlib.util
 
+import httpx
+import pytest
 from typer.testing import CliRunner
 
 from maldoc.adapters.chatbot import ChatbotAdapter
@@ -14,6 +16,7 @@ from maldoc.evaluate.evidence import (
     ExtractionEvidence,
     ResponseEvidence,
     RetrievalEvidence,
+    SkippedCombination,
 )
 
 runner = CliRunner()
@@ -44,6 +47,7 @@ def _sample_eval_result(
             payload_influenced_response=True,
             influence_indicators=["phrase_detected: access granted"],
         ),
+        evidence_mode="white_box",
         scores={
             "extraction_survival": 1.0,
             "chunk_survival": 1.0,
@@ -300,6 +304,161 @@ class TestCli:
         assert result.exit_code == 0
         assert "[1/1] hidden_text / pdf" in result.output
 
+    def test_run_reports_skipped_combinations(self, tmp_path, monkeypatch):
+        class FakeAttack:
+            def default_payload(self):
+                return "DEFAULT PAYLOAD"
+
+            def apply(self, payload, template):
+                return AttackResult(
+                    visible_content=f"visible {payload}",
+                    hidden_content=payload,
+                    technique="hidden_text",
+                )
+
+        captured = {}
+
+        class FakeAdapter:
+            def close(self):
+                return None
+
+        def fake_json_report(report, path):
+            captured["report"] = report
+            return path
+
+        monkeypatch.setattr("maldoc.attacks.get_attack", lambda _name: FakeAttack())
+        monkeypatch.setattr("maldoc.cli._get_adapter", lambda _t, _u: FakeAdapter())
+        monkeypatch.setattr(
+            "maldoc.generate.generate_document",
+            lambda _attack_result, _title, _fmt, _output_dir: tmp_path / "generated.pdf",
+        )
+        monkeypatch.setattr(
+            "maldoc.evaluate.runner.evaluate",
+            lambda _adapter, _attack_result, _path, _query: _sample_eval_result(),
+        )
+        monkeypatch.setattr("maldoc.report.json_report.report_filename", lambda _r: "run_report")
+        monkeypatch.setattr(
+            "maldoc.report.json_report.generate_json_report",
+            fake_json_report,
+        )
+        monkeypatch.setattr(
+            "maldoc.report.markdown_report.generate_markdown_report",
+            lambda _report, path: path,
+        )
+
+        result = runner.invoke(app, [
+            "run",
+            "--attack", "hidden_text,ocr_bait",
+            "--format", "pdf,docx",
+            "--output-dir", str(tmp_path),
+            "--reports-dir", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        assert "combinations skipped" in result.output
+        assert captured["report"].requested_attacks == ["hidden_text", "ocr_bait"]
+        assert captured["report"].requested_formats == ["pdf", "docx"]
+        assert captured["report"].skipped_combinations == [
+            SkippedCombination(
+                attack_name="ocr_bait",
+                document_format="docx",
+                reason="ocr_bait is not supported for docx. Choose a compatible format for this technique.",
+            )
+        ]
+
+    def test_run_retries_only_on_transient_errors(self, tmp_path, monkeypatch):
+        class FakeAttack:
+            def default_payload(self):
+                return "DEFAULT PAYLOAD"
+
+            def apply(self, payload, template):
+                return AttackResult(
+                    visible_content=f"visible {payload}",
+                    hidden_content=payload,
+                    technique="hidden_text",
+                )
+
+        class FakeAdapter:
+            def close(self):
+                return None
+
+        calls = {"count": 0}
+
+        def fake_eval(_adapter, _attack_result, _path, _query):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise httpx.ReadTimeout("timeout")
+            return _sample_eval_result()
+
+        monkeypatch.setattr("maldoc.attacks.get_attack", lambda _name: FakeAttack())
+        monkeypatch.setattr("maldoc.cli._get_adapter", lambda _t, _u: FakeAdapter())
+        monkeypatch.setattr(
+            "maldoc.generate.generate_document",
+            lambda _attack_result, _title, _fmt, _output_dir: tmp_path / "generated.pdf",
+        )
+        monkeypatch.setattr("maldoc.evaluate.runner.evaluate", fake_eval)
+        monkeypatch.setattr("time.sleep", lambda _s: None)
+        monkeypatch.setattr("maldoc.report.json_report.report_filename", lambda _r: "run_report")
+        monkeypatch.setattr(
+            "maldoc.report.json_report.generate_json_report",
+            lambda _report, path: path,
+        )
+        monkeypatch.setattr(
+            "maldoc.report.markdown_report.generate_markdown_report",
+            lambda _report, path: path,
+        )
+
+        result = runner.invoke(app, [
+            "run",
+            "--attack", "hidden_text",
+            "--format", "pdf",
+            "--output-dir", str(tmp_path),
+            "--reports-dir", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        assert calls["count"] == 2
+        assert "Retry 1/2 after error" in result.output
+
+    def test_run_does_not_retry_non_transient_errors(self, tmp_path, monkeypatch):
+        class FakeAttack:
+            def default_payload(self):
+                return "DEFAULT PAYLOAD"
+
+            def apply(self, payload, template):
+                return AttackResult(
+                    visible_content=f"visible {payload}",
+                    hidden_content=payload,
+                    technique="hidden_text",
+                )
+
+        class FakeAdapter:
+            def close(self):
+                return None
+
+        calls = {"count": 0}
+
+        def fake_eval(_adapter, _attack_result, _path, _query):
+            calls["count"] += 1
+            raise ValueError("deterministic failure")
+
+        monkeypatch.setattr("maldoc.attacks.get_attack", lambda _name: FakeAttack())
+        monkeypatch.setattr("maldoc.cli._get_adapter", lambda _t, _u: FakeAdapter())
+        monkeypatch.setattr(
+            "maldoc.generate.generate_document",
+            lambda _attack_result, _title, _fmt, _output_dir: tmp_path / "generated.pdf",
+        )
+        monkeypatch.setattr("maldoc.evaluate.runner.evaluate", fake_eval)
+
+        result = runner.invoke(app, [
+            "run",
+            "--attack", "hidden_text",
+            "--format", "pdf",
+            "--output-dir", str(tmp_path),
+            "--reports-dir", str(tmp_path),
+        ])
+        assert result.exit_code != 0
+        assert calls["count"] == 1
+        assert "Retry" not in result.output
+
     def test_demo_invalid_action_fails(self):
         result = runner.invoke(app, ["demo", "unknown"])
         assert result.exit_code != 0
@@ -338,11 +497,25 @@ class TestCli:
     def test_resolve_target_url_defaults(self):
         assert _resolve_target_url("demo", "") == "http://localhost:8000"
         assert _resolve_target_url("chatbot", "") == "http://localhost:8001"
-        assert _resolve_target_url("http", "") == "http://localhost:8000"
+        with pytest.raises(Exception, match="--target-url is required"):
+            _resolve_target_url("http", "")
 
     def test_resolve_target_url_explicit(self):
         assert _resolve_target_url("demo", "http://custom:9000") == "http://custom:9000"
         assert _resolve_target_url("chatbot", "http://custom:9001") == "http://custom:9001"
+        assert _resolve_target_url("http", "http://custom:9002") == "http://custom:9002"
+
+    def test_evaluate_http_requires_target_url(self, tmp_path):
+        doc_path = tmp_path / "doc.pdf"
+        doc_path.write_text("doc")
+        result = runner.invoke(app, [
+            "evaluate",
+            "--file", str(doc_path),
+            "--attack", "hidden_text",
+            "--target", "http",
+        ])
+        assert result.exit_code != 0
+        assert "--target-url is required when --target=http" in result.output
 
     def test_demo_start_starts_both_services(self, tmp_path, monkeypatch):
         compose_path = tmp_path / "docker-compose.yml"

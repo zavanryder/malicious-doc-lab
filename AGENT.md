@@ -29,16 +29,17 @@ demo/                # Demo-API: FastAPI REST app (intentionally vulnerable, por
   Dockerfile
 demo-chatbot/        # Demo-Chatbot: FastAPI chatbot with browser UI (intentionally vulnerable, port 8001)
   app.py             # FastAPI chatbot endpoints (POST /chat with file upload)
-  pipeline.py        # Same RAG pipeline as Demo-API
+  pipeline.py        # Thin wrapper around shared_pipeline.PipelineState
   config.py          # Ollama config + BLACK_BOX env var
   static/index.html  # Chat UI (HTML/CSS/JS)
   Dockerfile
+shared_pipeline.py   # Shared parse -> chunk -> embed -> store implementation
 documents/           # Detailed documentation
   attacks-and-techniques.md
   file-formats.md
   walkthrough-demo.md
   walkthrough-real-targets.md
-tests/               # pytest suite (166 tests)
+tests/               # pytest suite (186 tests)
 reports/             # Evaluation reports (gitignored except .gitkeep)
 output/              # Generated adversarial documents (gitignored)
 planning/            # Design docs (PLAN.md, ARCHITECTURE.md, TASKS.md)
@@ -73,8 +74,10 @@ BLACK_BOX=true docker compose up --build -d demo-chatbot
 7. **Output directories**: Generated documents go to `output/`. Reports go to `reports/`.
 8. **Report naming**: Reports use descriptive filenames: `{YYYYMMDD}_{HHMMSS}_{target}_{attack|multiple}_report.{json,md}` (`multiple` only when more than one attack is included in a consolidated run).
 9. **Report structure**: Markdown reports include an "Attack Summary" table (per-attack averages) when multiple attack types are present, above the per-test "All Results" table.
-10. **Batch runs**: CLI `run` accepts comma-separated `--attack` and `--format` values. Unsupported pairs are automatically skipped. The compatibility matrix is in `src/maldoc/coverage.py`.
-11. **PDF Unicode**: Use DejaVu TTF fonts (not Helvetica) for Unicode support in PDF generation.
+10. **Batch runs**: CLI `run` accepts comma-separated `--attack` and `--format` values. Unsupported pairs are automatically skipped and recorded in report metadata. The compatibility matrix is in `src/maldoc/coverage.py`.
+11. **Report metadata**: Consolidated reports carry execution mode (`white_box`, `black_box`, or `mixed`), requested attacks/formats, and skipped combinations.
+12. **Black-box targets**: Missing `/extracted` and `/chunks` endpoints are valid. Adapters should degrade extraction/chunk scoring to `N/A` rather than fail outright. `/reset` is optional for generic HTTP targets and always available on the demo-chatbot.
+13. **PDF Unicode**: Use DejaVu TTF fonts (not Helvetica) for Unicode support in PDF generation.
 
 ## Key interfaces
 
@@ -93,7 +96,7 @@ All 14 attacks: `hidden_text`, `white_on_white`, `metadata`, `retrieval_poison`,
 - `reset() -> None`
 
 Built-in adapters: `DemoAdapter` (Demo-API), `ChatbotAdapter` (Demo-Chatbot), `HttpAdapter` (generic REST).
-The `ChatbotAdapter` maps the BaseAdapter interface onto the chatbot's `POST /chat` endpoint and handles black-box mode (404 on evidence endpoints) gracefully.
+The `ChatbotAdapter` maps the BaseAdapter interface onto the chatbot's `POST /chat` endpoint. Both it and `HttpAdapter` treat missing evidence endpoints as black-box mode rather than hard failure.
 
 **Document generators** are standalone functions in `generate/`, one per format module. The `generate_document()` function in `generate/__init__.py` dispatches to the correct generator.
 

@@ -5,7 +5,7 @@ import binascii
 import re
 from pathlib import Path
 
-from maldoc.adapters.base import BaseAdapter
+from maldoc.adapters.base import BaseAdapter, EvidenceUnavailableError
 from maldoc.attacks.base import AttackResult
 from maldoc.evaluate.evidence import (
     ChunkEvidence,
@@ -86,20 +86,41 @@ def _is_typoglycemia_variant(word: str, target: str) -> bool:
 
 
 def _contains_typoglycemia_phrase(text: str, phrase: str) -> bool:
-    """Check phrase presence allowing typoglycemia variants for words >= 4 chars."""
+    """Check phrase presence with ordered, proximity-bounded token matching."""
     haystack_words = _tokenize_words(text)
-    if not haystack_words:
+    needle_words = _tokenize_words(phrase)
+    if not haystack_words or not needle_words:
         return False
 
-    for needle in _tokenize_words(phrase):
-        if needle in haystack_words:
-            continue
-        if len(needle) >= 4 and any(
-            _is_typoglycemia_variant(word, needle) for word in haystack_words
-        ):
-            continue
+    max_gap = 3
+
+    def _matches(word: str, target: str) -> bool:
+        if word == target:
+            return True
+        if len(target) >= 4 and _is_typoglycemia_variant(word, target):
+            return True
         return False
-    return True
+
+    for start_idx, word in enumerate(haystack_words):
+        if not _matches(word, needle_words[0]):
+            continue
+
+        matched = 1
+        last_match_idx = start_idx
+
+        for current_idx in range(start_idx + 1, len(haystack_words)):
+            if matched == len(needle_words):
+                break
+            if current_idx - last_match_idx - 1 > max_gap:
+                break
+            if _matches(haystack_words[current_idx], needle_words[matched]):
+                matched += 1
+                last_match_idx = current_idx
+
+        if matched == len(needle_words):
+            return True
+
+    return False
 
 
 def _payload_phrases(payload: str) -> list[str]:
@@ -271,7 +292,15 @@ def evaluate(
     adapter.upload(document_path)
 
     # Step 2: Capture extraction evidence
-    extracted_text = adapter.get_extracted_text()
+    extraction_available = True
+    chunking_available = True
+
+    try:
+        extracted_text = adapter.get_extracted_text()
+    except EvidenceUnavailableError:
+        extraction_available = False
+        extracted_text = ""
+
     payload_fragments = _find_payload_fragments(extracted_text, payload)
     match_terms = _build_match_terms(payload, payload_fragments, attack_result.format_hints)
     extraction = ExtractionEvidence(
@@ -281,7 +310,12 @@ def evaluate(
     )
 
     # Step 3: Capture chunk evidence
-    chunks = adapter.get_chunks()
+    try:
+        chunks = adapter.get_chunks()
+    except EvidenceUnavailableError:
+        chunking_available = False
+        chunks = []
+
     chunks_with_payload = [
         i
         for i, chunk in enumerate(chunks)
@@ -319,7 +353,13 @@ def evaluate(
     )
 
     # Step 6: Score with justifications
-    black_box = getattr(adapter, "_evidence_unavailable", False)
+    if extraction_available and chunking_available:
+        evidence_mode = "white_box"
+    elif not extraction_available and not chunking_available:
+        evidence_mode = "black_box"
+    else:
+        evidence_mode = "mixed"
+
     stage_scorers = {
         "extraction_survival": (score_extraction, extraction),
         "chunk_survival": (score_chunking, chunking),
@@ -329,7 +369,10 @@ def evaluate(
     scores: dict[str, float | None] = {}
     score_justifications = {}
     for stage, (scorer, evidence) in stage_scorers.items():
-        if black_box and stage in ("extraction_survival", "chunk_survival"):
+        if stage == "extraction_survival" and not extraction_available:
+            scores[stage] = None
+            score_justifications[stage] = "Evidence not available (black-box mode)"
+        elif stage == "chunk_survival" and not chunking_available:
             scores[stage] = None
             score_justifications[stage] = "Evidence not available (black-box mode)"
         else:
@@ -345,6 +388,7 @@ def evaluate(
         chunking=chunking,
         retrieval=retrieval,
         response=response,
+        evidence_mode=evidence_mode,
         scores=scores,
         score_justifications=score_justifications,
     )

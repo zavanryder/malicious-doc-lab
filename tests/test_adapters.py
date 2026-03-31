@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from maldoc.adapters.base import BaseAdapter, QueryResult, UploadResult
+from maldoc.adapters.base import (
+    BaseAdapter,
+    EvidenceUnavailableError,
+    QueryResult,
+    UploadResult,
+)
 from maldoc.adapters.chatbot import ChatbotAdapter
 from maldoc.adapters.demo import DemoAdapter
 from maldoc.adapters.http import HttpAdapter
@@ -134,7 +139,6 @@ class TestChatbotAdapter:
         adapter = ChatbotAdapter()
         text = adapter.get_extracted_text()
         assert text == "some text"
-        assert not adapter._evidence_unavailable
 
     def test_get_extracted_text_black_box(self, httpx_mock):
         httpx_mock.add_response(
@@ -142,9 +146,8 @@ class TestChatbotAdapter:
             status_code=404,
         )
         adapter = ChatbotAdapter()
-        text = adapter.get_extracted_text()
-        assert text == ""
-        assert adapter._evidence_unavailable
+        with pytest.raises(EvidenceUnavailableError):
+            adapter.get_extracted_text()
 
     def test_get_chunks_black_box(self, httpx_mock):
         httpx_mock.add_response(
@@ -152,9 +155,8 @@ class TestChatbotAdapter:
             status_code=404,
         )
         adapter = ChatbotAdapter()
-        chunks = adapter.get_chunks()
-        assert chunks == []
-        assert adapter._evidence_unavailable
+        with pytest.raises(EvidenceUnavailableError):
+            adapter.get_chunks()
 
     def test_reset(self, httpx_mock):
         httpx_mock.add_response(
@@ -201,6 +203,32 @@ class TestHttpAdapter:
         test_file.write_bytes(b"fake content")
         result = adapter.upload(test_file)
         assert result.filename == "test.pdf"
+
+    def test_get_extracted_text_black_box(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://example.com/extracted",
+            status_code=404,
+        )
+        adapter = HttpAdapter(base_url="http://example.com")
+        with pytest.raises(EvidenceUnavailableError):
+            adapter.get_extracted_text()
+
+    def test_get_chunks_black_box(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://example.com/chunks",
+            status_code=404,
+        )
+        adapter = HttpAdapter(base_url="http://example.com")
+        with pytest.raises(EvidenceUnavailableError):
+            adapter.get_chunks()
+
+    def test_reset_ignores_missing_endpoint(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://example.com/reset",
+            status_code=404,
+        )
+        adapter = HttpAdapter(base_url="http://example.com")
+        adapter.reset()
 
     def test_close(self):
         adapter = HttpAdapter(base_url="http://example.com")

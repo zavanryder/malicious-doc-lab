@@ -2,7 +2,7 @@
 
 ## Overview
 
-`malicious-doc-lab` is a CLI tool (`maldoc`) that generates adversarial documents, evaluates them against AI document-processing pipelines, and produces evidence-rich reports.
+`malicious-doc-lab` is a Typer CLI (`maldoc`) that generates adversarial documents, evaluates them against AI document-processing pipelines, and produces JSON/Markdown reports. The current design supports both white-box and black-box targets and uses a shared ingestion pipeline for both built-in demo services.
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -14,298 +14,237 @@
              │
              ▼
 ┌─────────────────────────────────────────────────────┐
-│              Target (via Adapter)                    │
+│              Target (via Adapter)                   │
 │                                                     │
-│  Built-in demo app (FastAPI)    OR   Custom target  │
-│  - upload / ingest / ask / reset     via adapter    │
+│  Demo-API / Demo-Chatbot / Custom HTTP target       │
+│  - upload / query / optional reset                  │
+│  - optional extraction and chunk evidence           │
 └─────────────────────────────────────────────────────┘
 ```
 
----
-
-## Package layout
+## Repository Layout
 
 ```
 malicious-doc-lab/
-├── src/
-│   └── maldoc/
-│       ├── __init__.py
-│       ├── cli.py                  # Typer CLI entrypoint
-│       ├── generate/
-│       │   ├── __init__.py
-│       │   ├── payloads.py         # Attack payload definitions
-│       │   ├── pdf.py              # PDF document generation
-│       │   ├── docx.py             # DOCX document generation
-│       │   ├── html.py             # HTML/Markdown generation
-│       │   ├── image.py            # Image-based hidden text
-│       │   ├── csv_gen.py          # CSV/spreadsheet payloads
-│       │   └── templates.py        # Benign-looking document templates
-│       ├── attacks/
-│       │   ├── __init__.py
-│       │   ├── base.py             # Base attack class
-│       │   ├── hidden_text.py      # Hidden text attack
-│       │   ├── white_on_white.py   # White-on-white text
-│       │   ├── metadata.py         # Metadata injection
-│       │   ├── retrieval_poison.py # Retrieval poisoning
-│       │   ├── ocr_bait.py         # OCR bait (stub)
-│       │   ├── off_page.py         # Off-page/layered text (stub)
-│       │   ├── chunk_split.py      # Chunk-boundary split (stub)
-│       │   ├── summary_steer.py    # Summary steering (stub)
-│       │   ├── delayed_trigger.py  # Delayed trigger (stub)
-│       │   └── tool_routing.py     # Tool-routing manipulation (stub)
-│       ├── adapters/
-│       │   ├── __init__.py
-│       │   ├── base.py             # Base adapter interface (ABC)
-│       │   ├── demo.py             # Adapter for Demo-API
-│       │   ├── chatbot.py          # Adapter for Demo-Chatbot
-│       │   └── http.py             # Generic HTTP adapter for custom targets
-│       ├── evaluate/
-│       │   ├── __init__.py
-│       │   ├── runner.py           # Orchestrates evaluation pipeline
-│       │   ├── scoring.py          # Survival and influence scoring
-│       │   └── evidence.py         # Evidence capture and storage
-│       └── report/
-│           ├── __init__.py
-│           ├── json_report.py      # JSON report output
-│           └── markdown_report.py  # Markdown report output
-├── demo/                               # Demo-API (port 8000)
-│   ├── Dockerfile
-│   ├── app.py                      # FastAPI REST endpoints
-│   ├── pipeline.py                 # Parse → OCR → chunk → embed → store
-│   ├── config.py                   # Ollama endpoint, model config
-│   └── requirements.txt
-├── demo-chatbot/                       # Demo-Chatbot (port 8001)
-│   ├── Dockerfile
-│   ├── app.py                      # FastAPI chatbot (POST /chat + browser UI)
-│   ├── pipeline.py                 # Same RAG pipeline as Demo-API
-│   ├── config.py                   # Ollama config + BLACK_BOX env var
-│   ├── static/index.html           # Chat UI (HTML/CSS/JS)
-│   └── requirements.txt
-├── docker-compose.yml
-├── pyproject.toml
+├── src/maldoc/
+│   ├── cli.py
+│   ├── coverage.py
+│   ├── attacks/             # 14 attack implementations
+│   ├── adapters/            # DemoAdapter, ChatbotAdapter, HttpAdapter, base ABC
+│   ├── evaluate/            # Evidence models, runner, scoring
+│   ├── generate/            # 10 generator modules, 13 CLI format labels
+│   └── report/              # JSON and Markdown reporting
+├── demo/
+│   ├── app.py               # Demo-API FastAPI endpoints
+│   ├── pipeline.py          # Thin wrapper around shared_pipeline.PipelineState
+│   ├── config.py
+│   └── Dockerfile
+├── demo-chatbot/
+│   ├── app.py               # Demo-Chatbot FastAPI endpoints
+│   ├── pipeline.py          # Thin wrapper around shared_pipeline.PipelineState
+│   ├── config.py
+│   ├── static/index.html
+│   └── Dockerfile
+├── shared_pipeline.py       # Shared parse -> chunk -> embed -> store implementation
+├── documents/
 ├── planning/
-│   ├── PLAN.md
-│   ├── ARCHITECTURE.md
-│   └── TASKS.md
+├── tests/
+├── docker-compose.yml
 └── README.md
 ```
 
----
+## Core Components
 
-## Core components
+### CLI
 
-### CLI (`maldoc`)
-
-Built with **Typer**. Subcommands:
+Commands:
 
 | Command | Purpose |
 |---------|---------|
-| `maldoc generate` | Generate adversarial documents |
-| `maldoc evaluate` | Evaluate documents against a target |
-| `maldoc report` | Generate reports from evaluation results |
-| `maldoc run` | Full pipeline: generate → evaluate → report |
-| `maldoc demo` | Manage demo services (start, stop, reset) |
+| `maldoc generate` | Generate adversarial documents only |
+| `maldoc evaluate` | Evaluate one existing document against a target |
+| `maldoc report` | Render reports from saved evaluation JSON |
+| `maldoc run` | Generate -> evaluate -> report in one step |
+| `maldoc demo` | Start, stop, or reset the built-in demo services |
 
-### Document generation (`maldoc.generate`)
+`run` accepts comma-separated `--attack` and `--format` values. Unsupported combinations are skipped, echoed to the console, and stored in report metadata.
 
-Produces adversarial documents in various formats. Each generator takes a payload (attack content + benign wrapper) and writes a file.
+### Attack Layer
 
-**Libraries:**
-- PDF: `fpdf2`
-- DOCX: `python-docx`
-- Image: `Pillow`
-- CSV: stdlib `csv`
-- HTML/MD: string templates
+All attacks inherit from `BaseAttack` and return an `AttackResult`:
 
-### Attack classes (`maldoc.attacks`)
+- `visible_content`
+- `hidden_content`
+- `metadata`
+- `technique`
+- `format_hints`
 
-Each attack class implements a common interface:
+Coverage realism is controlled separately by `src/maldoc/coverage.py`, which marks attack/format pairs as supported, degraded, or unsupported.
 
-```python
-class BaseAttack(ABC):
-    name: str
-    description: str
+### Generator Layer
 
-    @abstractmethod
-    def apply(self, payload: str, template: dict) -> AttackResult:
-        """Apply attack technique, return content ready for document generation."""
-        ...
-```
+Generators are standalone modules for:
 
-**v0.1.0 core (fully implemented):**
-- `hidden_text` — zero-width characters, font-size-zero text
-- `white_on_white` — white text on white background
-- `metadata` — payload injected into document metadata fields
-- `retrieval_poison` — content designed to rank high for target queries
+- `pdf`
+- `docx`
+- `html`
+- `md`
+- `txt`
+- `csv`
+- `image`
+- `xlsx`
+- `pptx`
+- `eml`
 
-**v0.1.0 stubs (interface only, implemented later):**
-- `ocr_bait`, `off_page`, `chunk_split`, `summary_steer`, `delayed_trigger`, `tool_routing`
+The CLI additionally exposes `png`, `jpg`, and `jpeg` as aliases for the image generator.
 
-### Adapters (`maldoc.adapters`)
+Recent fidelity rule:
+- Fallback generators must preserve the intended transformed carrier for an attack rather than leak the literal payload as a generic hidden field.
 
-Adapters define how the tool interacts with a target system. This is the integration point for both the demo app and real-world targets.
+### Adapter Layer
 
-```python
-class BaseAdapter(ABC):
-    @abstractmethod
-    def upload(self, file_path: Path) -> UploadResult: ...
+Built-in adapters:
 
-    @abstractmethod
-    def query(self, question: str) -> QueryResult: ...
+- `DemoAdapter` for the demo REST API
+- `ChatbotAdapter` for the demo chatbot
+- `HttpAdapter` for custom HTTP targets
 
-    @abstractmethod
-    def get_extracted_text(self) -> str: ...
+Adapter contract:
 
-    @abstractmethod
-    def reset(self) -> None: ...
-```
+- `upload(file_path)`
+- `query(question)`
+- `get_extracted_text()`
+- `get_chunks()`
+- `reset()`
 
-**Built-in adapters:**
-- `DemoAdapter` — talks to the Demo-API (`--target demo`, port 8000)
-- `ChatbotAdapter` — talks to the Demo-Chatbot (`--target chatbot`, port 8001) via `POST /chat`; handles black-box mode (404 on evidence endpoints)
-- `HttpAdapter` — configurable HTTP adapter for custom REST endpoints (`--target http`)
+Black-box behavior:
 
-### Evaluation (`maldoc.evaluate`)
+- Missing `/extracted` or `/chunks` raise `EvidenceUnavailableError`
+- The evaluator downgrades extraction/chunk scoring to `N/A`
+- Missing `/reset` is tolerated by `HttpAdapter`
+- `demo-chatbot` always exposes `/reset`, even in black-box mode, so batch runs remain isolated
 
-Orchestrates the evaluation pipeline:
+### Evaluation Layer
 
-1. Upload document via adapter
-2. Query the target with attack-relevant questions
-3. Capture evidence (extracted text, retrieval results, final responses)
-4. Score each stage (parser survival, retrieval influence, response impact)
+The evaluator performs:
 
-Scoring produces a structured `EvaluationResult` with per-stage scores. In black-box mode (when evidence endpoints are unavailable), extraction and chunking scores are `None` ("N/A" in reports).
+1. Reset target state when available
+2. Upload the generated document
+3. Capture extraction evidence when available
+4. Capture chunk evidence when available
+5. Query the target
+6. Score extraction, chunking, retrieval, and response influence
 
-### Reporting (`maldoc.report`)
+Each `EvaluationResult` records `evidence_mode`:
 
-Takes `EvaluationResult` and renders:
-- **JSON** — machine-readable, full evidence
-- **Markdown** — human-readable summary with pass/fail per stage
+- `white_box`
+- `black_box`
+- `mixed`
 
----
+### Reporting Layer
 
-## Demo Apps
+`ConsolidatedReport` includes:
 
-Both demo apps are deliberately vulnerable. **Not for production use.** They share the same RAG pipeline but expose different interaction models.
+- `results`
+- `execution_mode`
+- `requested_attacks`
+- `requested_formats`
+- `skipped_combinations`
+- `cli_commands`
+
+Markdown reports surface:
+
+- overall verdict
+- execution mode
+- requested attacks and formats
+- skipped combinations
+- attack summary table for multi-attack runs
+- per-result evidence mode
+
+## Demo Services
+
+Both demo apps are intentionally vulnerable and share `shared_pipeline.PipelineState`.
 
 ### Shared Pipeline
 
-```
-Document (bytes)
-  → Parse (PyMuPDF, python-docx, BeautifulSoup)
-  → OCR (pytesseract, if image content detected)
-  → Chunk (naive fixed-size splitter)
-  → Embed (Ollama embeddings)
-  → Store (ChromaDB)
-  → Query (ChromaDB similarity search → Ollama LLM completion)
-```
+Pipeline stages:
 
-### Demo-API (port 8000)
+1. Parse uploaded document bytes
+2. OCR embedded images where applicable
+3. Chunk extracted text
+4. Embed chunks with Ollama embeddings
+5. Store vectors in ChromaDB
+6. Query relevant chunks and send context to Ollama chat
 
-REST-style document processing API. Adapter: `DemoAdapter` (`--target demo`).
+The pipeline now lives once in `shared_pipeline.py`; `demo/pipeline.py` and `demo-chatbot/pipeline.py` are thin wrappers configured with different collection names.
+
+### Demo-API
+
+Endpoints:
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/upload` | Upload and ingest a document |
-| POST | `/ask` | Ask a question against ingested content |
-| GET | `/extracted` | Return raw extracted text from last upload |
-| GET | `/chunks` | Return chunks from last upload |
-| POST | `/reset` | Clear all ingested data |
+| POST | `/ask` | Query ingested content |
+| GET | `/extracted` | Return raw extracted text |
+| GET | `/chunks` | Return stored chunks |
+| POST | `/reset` | Clear ingested state |
 | GET | `/health` | Health check |
 
-### Demo-Chatbot (port 8001)
+### Demo-Chatbot
 
-Conversational chatbot with browser UI and file upload. Adapter: `ChatbotAdapter` (`--target chatbot`).
+Endpoints:
 
-| Method | Path | Purpose | Black-box |
-|--------|------|---------|-----------|
-| GET | `/` | Chat UI (HTML) | Always |
-| POST | `/chat` | Conversational endpoint (message + optional file) | Always |
-| GET | `/history` | Conversation history | Always |
+| Method | Path | Purpose | Black-box behavior |
+|--------|------|---------|--------------------|
+| GET | `/` | Browser chat UI | Always available |
+| POST | `/chat` | Chat + optional file upload | Always available |
+| GET | `/history` | Shared history view | Always available |
 | GET | `/extracted` | Raw extracted text | Hidden when `BLACK_BOX=true` |
-| GET | `/chunks` | Chunks | Hidden when `BLACK_BOX=true` |
-| POST | `/reset` | Clear conversation + docs | Hidden when `BLACK_BOX=true` |
-| GET | `/health` | Health check | Always |
+| GET | `/chunks` | Stored chunks | Hidden when `BLACK_BOX=true` |
+| POST | `/reset` | Clear history + ingested state | Always available |
+| GET | `/health` | Health check | Always available |
 
-The `POST /chat` endpoint accepts multipart form data (`message` + optional `file`). When a file is attached, it is ingested through the RAG pipeline and the response includes `extracted_length` and `num_chunks` metadata.
+Operational detail:
+- Both FastAPI apps offload blocking parse/embed/chat work with `run_in_threadpool` rather than blocking the event loop directly.
 
-### Configuration
+## Deployment Notes
 
-Both demo apps read Ollama connection details from environment variables:
-
-- `OLLAMA_BASE_URL` — default `http://localhost:11434`
-- `OLLAMA_MODEL` — default `llama3.2`
-- `OLLAMA_EMBED_MODEL` — default `nomic-embed-text`
-
-The Demo-Chatbot also reads:
-- `BLACK_BOX` — default `false`; when `true`, hides evidence endpoints (`/extracted`, `/chunks`, `/reset`)
-
-The user is responsible for providing a running Ollama instance.
-
----
-
-## Docker Compose
+`docker-compose.yml` builds both demo images from the repo root:
 
 ```yaml
 services:
   demo-app:
-    build: ./demo
-    ports:
-      - "8000:8000"
-    environment:
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
-      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
 
   demo-chatbot:
-    build: ./demo-chatbot
-    ports:
-      - "8001:8001"
-    environment:
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
-      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-nomic-embed-text}
-      - BLACK_BOX=${BLACK_BOX:-false}
+    build:
+      context: .
+      dockerfile: demo-chatbot/Dockerfile
 ```
 
-Two services. Ollama runs on the host or as a remote service — the user configures via env vars.
+That lets both images copy `shared_pipeline.py` without duplicating the ingestion implementation.
 
----
+Environment variables:
 
-## Data flow
+- `OLLAMA_BASE_URL`
+- `OLLAMA_MODEL`
+- `OLLAMA_EMBED_MODEL`
+- `BLACK_BOX` for `demo-chatbot`
+- `HISTORY_LIMIT` for `demo-chatbot`
 
-```
-# Demo-API
-User runs: maldoc run --attack hidden_text --format pdf --target demo
+## Test Coverage
 
-  1. generate:  hidden_text + pdf → output/malicious_hidden_text.pdf
-  2. evaluate:  DemoAdapter.upload(pdf) → DemoAdapter.query("...") → score
-  3. report:    EvaluationResult → reports/report.json + reports/report.md
+Current local suite:
 
-# Demo-Chatbot
-User runs: maldoc run --attack hidden_text --format pdf --target chatbot
+- `186 passed`
 
-  1. generate:  hidden_text + pdf → output/malicious_hidden_text.pdf
-  2. evaluate:  ChatbotAdapter.upload(pdf via /chat) → ChatbotAdapter.query("..." via /chat) → score
-  3. report:    EvaluationResult → reports/report.json + reports/report.md
-```
+Regression coverage now includes:
 
----
-
-## Key dependencies
-
-| Package | Purpose |
-|---------|---------|
-| typer | CLI framework |
-| fpdf2 | PDF generation |
-| python-docx | DOCX generation |
-| Pillow | Image generation |
-| httpx | HTTP client (adapter communication) |
-| pydantic | Data models |
-| fastapi | Demo app |
-| uvicorn | Demo app server |
-| pymupdf | PDF parsing (demo) |
-| pytesseract | OCR (demo) |
-| chromadb | Vector store (demo) |
-| ollama | Ollama Python client (demo) |
-| beautifulsoup4 | HTML parsing (demo) |
+- transformed-carrier generator fidelity
+- black-box evidence handling in adapters/evaluator
+- report metadata for execution mode and skipped combinations
+- shared demo pipeline structure
+- demo app threadpool usage and chatbot reset availability

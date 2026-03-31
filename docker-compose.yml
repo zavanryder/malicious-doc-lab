@@ -1,6 +1,8 @@
 services:
   demo-app:
-    build: ./demo
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
     ports:
       - "8000:8000"
     extra_hosts:
@@ -11,7 +13,9 @@ services:
       - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-nomic-embed-text}
 
   demo-chatbot:
-    build: ./demo-chatbot
+    build:
+      context: .
+      dockerfile: demo-chatbot/Dockerfile
     ports:
       - "8001:8001"
     extra_hosts:

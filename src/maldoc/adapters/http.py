@@ -4,7 +4,12 @@ from pathlib import Path
 
 import httpx
 
-from maldoc.adapters.base import BaseAdapter, QueryResult, UploadResult
+from maldoc.adapters.base import (
+    BaseAdapter,
+    EvidenceUnavailableError,
+    QueryResult,
+    UploadResult,
+)
 
 
 class HttpAdapter(BaseAdapter):
@@ -72,18 +77,33 @@ class HttpAdapter(BaseAdapter):
         )
 
     def get_extracted_text(self) -> str:
-        response = self.client.get(self.url_map["extracted"])
-        response.raise_for_status()
-        return response.json().get("extracted_text", "")
+        try:
+            response = self.client.get(self.url_map["extracted"])
+            response.raise_for_status()
+            return response.json().get("extracted_text", "")
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise EvidenceUnavailableError("Extraction evidence endpoint unavailable") from exc
+            raise
 
     def get_chunks(self) -> list[str]:
-        response = self.client.get(self.url_map["chunks"])
-        response.raise_for_status()
-        return response.json().get("chunks", [])
+        try:
+            response = self.client.get(self.url_map["chunks"])
+            response.raise_for_status()
+            return response.json().get("chunks", [])
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise EvidenceUnavailableError("Chunk evidence endpoint unavailable") from exc
+            raise
 
     def reset(self) -> None:
-        response = self.client.post(self.url_map["reset"])
-        response.raise_for_status()
+        try:
+            response = self.client.post(self.url_map["reset"])
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return
+            raise
 
     def close(self) -> None:
         self.client.close()

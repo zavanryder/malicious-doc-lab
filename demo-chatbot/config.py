@@ -10,3 +10,4 @@ CHROMA_COLLECTION = "maldoc_chatbot"
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 BLACK_BOX = os.getenv("BLACK_BOX", "false").lower() in ("true", "1", "yes")
+HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "500"))

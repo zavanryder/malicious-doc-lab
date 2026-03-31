@@ -19,6 +19,9 @@ uv run maldoc run --attack retrieval_poison --format pdf
 # Run full pipeline against Demo-Chatbot
 uv run maldoc run --attack retrieval_poison --format pdf --target chatbot
 
+# Run the Demo-Chatbot in black-box mode
+BLACK_BOX=true OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --build -d demo-chatbot
+
 # Open Demo-Chatbot in browser for manual testing
 # http://localhost:8001
 
@@ -117,7 +120,10 @@ reports/
   20260329_143000_demo_retrieval_poison_report.md      # Human-readable summary with verdict
 ```
 
-Each report includes per-stage scores (extraction, chunking, retrieval, response), evidence from each pipeline stage, and the raw LLM response. When multiple attack types are included in a single run, the Markdown report adds an **Attack Summary** table with per-attack averages above the detailed per-test results.
+Each report includes per-stage scores (extraction, chunking, retrieval, response), evidence from each pipeline stage, the raw LLM response, execution mode, requested attacks/formats, and any skipped combinations. When multiple attack types are included in a single run, the Markdown report adds an **Attack Summary** table with per-attack averages above the detailed per-test results.
+
+Black-box note:
+- If a target does not expose `/extracted` or `/chunks`, `maldoc` treats it as a black-box target and reports extraction/chunking as `N/A` instead of failing.
 
 Filename note:
 - Single attack (even with multiple formats): `{timestamp}_{target}_{attack}_report.*`
@@ -140,18 +146,21 @@ uv run pytest                     # unit tests (no Docker/Ollama needed)
 uv run pytest -m integration      # integration tests (requires Docker + Ollama)
 ```
 
+Current local test suite: `186 passed`
+
 ## Project structure
 
 ```
 src/maldoc/       # Python package
   attacks/        # 14 attack class implementations
-  generate/       # Document generators (13 formats)
+  generate/       # 10 generator modules (13 CLI format labels including image aliases)
   adapters/       # Target adapters (demo, chatbot, HTTP, custom)
   evaluate/       # Evaluation pipeline and scoring
   report/         # JSON and Markdown report generators
 demo/             # Demo-API: FastAPI REST app (port 8000)
 demo-chatbot/     # Demo-Chatbot: FastAPI chatbot with browser UI (port 8001)
+shared_pipeline.py # Shared ingestion pipeline used by both demo services
 documents/        # Detailed documentation
-tests/            # Test suite (166 tests)
+tests/            # Test suite (186 tests)
 planning/         # Design docs
 ```

@@ -15,7 +15,8 @@ This is a security research tool. Generated documents are adversarial by design.
 - `reports/` — evaluation report output (gitignored except `.gitkeep`)
 - `output/` — generated adversarial documents (gitignored)
 - `planning/` — design docs (PLAN.md, ARCHITECTURE.md, TASKS.md)
-- `tests/` — pytest test suite (166 tests)
+- `shared_pipeline.py` — shared ingestion pipeline used by both demo services
+- `tests/` — pytest test suite (186 tests)
 - See `planning/ARCHITECTURE.md` for full layout and data flow
 
 ## Commands
@@ -60,20 +61,22 @@ BLACK_BOX=true OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --bu
 
 - 14 attack classes, all inherit from `BaseAttack` ABC in `attacks/base.py`
 - 4 adapters (base ABC, DemoAdapter, ChatbotAdapter, HttpAdapter) in `adapters/`
-- 10 document format generators (pdf, docx, html, md, txt, csv, image, xlsx, pptx, eml) in `generate/`
+- 10 document generator modules in `generate/`; CLI exposes 13 format labels because `png`, `jpg`, and `jpeg` are image aliases
 - Generated documents write to `output/` by default
 - Reports write to `reports/` by default with descriptive filenames (e.g., `20260329_143000_demo_retrieval_poison_report.md`)
 - Report filenames follow the pattern `{YYYYMMDD}_{HHMMSS}_{target}_{attack|multiple}_report.{json,md}` (`multiple` only when results include more than one attack)
-- Markdown reports include an "Attack Summary" table (per-attack averages) when multiple attack types are present, above the "All Results" per-test table
+- Markdown reports include execution mode, requested attacks/formats, skipped combinations, and an "Attack Summary" table when multiple attack types are present
 - CLI `run` command accepts comma-separated `--attack` and `--format` values; unsupported pairs are skipped automatically
 - `src/maldoc/coverage.py` defines the attack/format compatibility matrix (supported, degraded, unsupported)
 - CLI uses `--output-dir` for generated documents, `--reports-dir` for reports
 - Demo-API defaults: `--target demo` (auto-resolves to `http://localhost:8000`)
 - Demo-Chatbot defaults: `--target chatbot` (auto-resolves to `http://localhost:8001`)
 - Both demo apps read Ollama config from env vars: `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`
-- Demo-Chatbot supports `BLACK_BOX` env var: when true, hides `/extracted`, `/chunks`, `/reset` endpoints
-- In black-box mode, extraction and chunk scores are `None` ("N/A" in reports)
+- Demo-Chatbot supports `BLACK_BOX` env var: when true, hides `/extracted` and `/chunks` but keeps `/reset` available so evaluations stay isolated
+- `HttpAdapter` tolerates missing `/reset`, `/extracted`, and `/chunks`; missing evidence endpoints degrade extraction/chunk scores to `None` ("N/A" in reports)
+- In black-box mode, extraction and chunk scores are `None` ("N/A" in reports), while retrieval and response scoring still run
 - `docker-compose.yml` defines two services (`demo-app`, `demo-chatbot`); user provides Ollama externally
+- `docker-compose.yml` builds both demo images from the repo root so they can share `shared_pipeline.py`
 - `docker-compose.yml` includes `extra_hosts` for Linux `host.docker.internal` support
 
 ## Attacks
@@ -82,7 +85,7 @@ BLACK_BOX=true OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --bu
 
 ## Testing
 
-- pytest for all tests (166 tests, 0 warnings)
+- pytest for all tests (186 tests, 0 warnings)
 - Unit tests must run without Docker or Ollama
 - Integration tests are marked with `@pytest.mark.integration`
 - Test files mirror source layout: `tests/test_attacks.py`, `tests/test_generators.py`, etc.

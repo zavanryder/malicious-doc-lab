@@ -39,12 +39,13 @@ def generate_xlsx(attack_result: AttackResult, title: str, output_path: Path) ->
         cell.font = Font(color="FFFFFF", size=1)
         ws.column_dimensions["E"].hidden = True
     elif attack_result.technique == "off_page":
-        # Place data far to the right/bottom where many viewers won't show by default.
-        ws.cell(row=1048576, column=16384, value=attack_result.hidden_content)
+        # Place data far to the right/bottom where many viewers won't show by default,
+        # without using extreme sheet bounds that can cause pathological scan times.
+        ws.cell(row=5000, column=200, value=attack_result.hidden_content)
     elif hints.get("obfuscated_variants"):
         ws.cell(row=max(3, row), column=2, value=hints["obfuscated_variants"][0])
-    elif attack_result.hidden_content and attack_result.hidden_content not in attack_result.visible_content:
-        ws.cell(row=max(3, row), column=2, value=attack_result.hidden_content)
+    elif hints.get("obfuscated_payload"):
+        ws.cell(row=max(3, row), column=2, value=hints["obfuscated_payload"])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(output_path))

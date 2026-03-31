@@ -14,11 +14,13 @@ By default, the HTTP adapter expects these endpoints:
 |--------|------|---------|
 | POST | `/upload` | Upload a document (multipart file) |
 | POST | `/ask` | Query the system (query parameter: `question`) |
-| GET | `/extracted` | Get raw extracted text |
-| GET | `/chunks` | Get chunked text |
-| POST | `/reset` | Reset ingested data |
+| GET | `/extracted` | Get raw extracted text (optional) |
+| GET | `/chunks` | Get chunked text (optional) |
+| POST | `/reset` | Reset ingested data (optional) |
 
 If your application uses different paths, you can write a custom adapter (see "Writing a custom adapter" below).
+
+If `/extracted` and `/chunks` are absent, `maldoc` now treats the target as black-box and reports extraction/chunking as `N/A` instead of failing. If `/reset` is absent, the generic HTTP adapter continues without a reset step.
 
 ---
 

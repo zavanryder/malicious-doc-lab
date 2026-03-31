@@ -2,9 +2,12 @@
 
 from fastapi import FastAPI, UploadFile
 import ollama
+from starlette.concurrency import run_in_threadpool
 
 from config import OLLAMA_BASE_URL, OLLAMA_MODEL
 from pipeline import (
+    get_last_chunks,
+    get_last_extracted_text,
     ingest,
     query_documents,
     reset_state,
@@ -18,14 +21,14 @@ ollama_client = ollama.Client(host=OLLAMA_BASE_URL)
 async def upload(file: UploadFile):
     """Upload and ingest a document."""
     contents = await file.read()
-    result = ingest(contents, file.filename)
+    result = await run_in_threadpool(ingest, contents, file.filename)
     return result
 
 
 @app.post("/ask")
 async def ask(question: str):
     """Ask a question against ingested content."""
-    relevant_chunks = query_documents(question)
+    relevant_chunks = await run_in_threadpool(query_documents, question)
     context = "\n\n".join(relevant_chunks)
 
     # Intentionally vulnerable: raw context injection into prompt
@@ -36,7 +39,8 @@ async def ask(question: str):
         f"Answer:"
     )
 
-    response = ollama_client.chat(
+    response = await run_in_threadpool(
+        ollama_client.chat,
         model=OLLAMA_MODEL,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -51,15 +55,14 @@ async def ask(question: str):
 @app.get("/extracted")
 async def extracted():
     """Return raw extracted text from last upload."""
-    from pipeline import last_extracted_text
-    return {"extracted_text": last_extracted_text}
+    return {"extracted_text": get_last_extracted_text()}
 
 
 @app.get("/chunks")
 async def chunks():
     """Return chunks from last upload."""
-    from pipeline import last_chunks
-    return {"chunks": last_chunks, "count": len(last_chunks)}
+    chunks = get_last_chunks()
+    return {"chunks": chunks, "count": len(chunks)}
 
 
 @app.post("/reset")

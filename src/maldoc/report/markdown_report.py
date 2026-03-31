@@ -305,6 +305,7 @@ def _result_section(result: EvaluationResult) -> list[str]:
     lines.extend([
         f"**Verdict**: {verdict}",
         f"**Document**: {result.document_path}",
+        f"**Evidence mode**: {result.evidence_mode}",
         "",
         "| Stage | Score | Rating | Justification |",
         "|-------|-------|--------|---------------|",
@@ -370,6 +371,7 @@ def generate_markdown_report(report: ConsolidatedReport, output_path: Path) -> P
         "",
         f"**Date**: {report.timestamp.strftime('%Y-%m-%d %H:%M:%S')}",
         f"**Target**: {report.target}",
+        f"**Execution mode**: {report.execution_mode}",
         f"**Attacks**: {', '.join(report.attacks)}",
         f"**Formats**: {', '.join(report.formats)}",
         f"**Tests run**: {len(report.results)}",
@@ -377,9 +379,30 @@ def generate_markdown_report(report: ConsolidatedReport, output_path: Path) -> P
         "",
     ]
 
+    if report.requested_attacks:
+        lines.append(f"**Requested attacks**: {', '.join(report.requested_attacks)}")
+    if report.requested_formats:
+        lines.append(f"**Requested formats**: {', '.join(report.requested_formats)}")
+    if report.requested_attacks or report.requested_formats:
+        lines.append("")
+
     # Per-attack summary when multiple attacks are present
     if len(report.attacks) > 1:
         lines.extend(_attack_summary_table(report.results))
+
+    if report.skipped_combinations:
+        lines.extend([
+            "## Skipped Combinations",
+            "",
+            "| Attack | Format | Reason |",
+            "|--------|--------|--------|",
+        ])
+        for skipped in report.skipped_combinations:
+            reason = skipped.reason.replace("|", "\\|")
+            lines.append(
+                f"| {skipped.attack_name} | {skipped.document_format} | {reason} |"
+            )
+        lines.extend(["",])
 
     # Full results table
     lines.extend([

@@ -200,6 +200,16 @@ done
 
 This produces a full set of reports in `reports/` with evidence for each run. Unsupported attack/format pairs are automatically skipped.
 
+Alternatively, use `--attack-plus-format` to specify exact pairs in a single consolidated run:
+
+```bash
+uv run maldoc run \
+  --attack-plus-format "retrieval_poison:pdf,summary_steer:pdf,metadata:docx,ocr_bait:image,tool_routing:md" \
+  --target http --target-url https://client-app.example.com
+```
+
+By default, `run` deletes generated artifacts after evaluation. Use `--keep-artifacts` if you need the documents for manual inspection or re-testing.
+
 ### Report compilation
 
 All reports are in `reports/` with descriptive names:

@@ -39,7 +39,7 @@ documents/           # Detailed documentation
   file-formats.md
   walkthrough-demo.md
   walkthrough-real-targets.md
-tests/               # pytest suite (186 tests)
+tests/               # pytest suite (195 tests)
 reports/             # Evaluation reports (gitignored except .gitkeep)
 output/              # Generated adversarial documents (gitignored)
 planning/            # Design docs (PLAN.md, ARCHITECTURE.md, TASKS.md)
@@ -52,6 +52,7 @@ uv sync                                          # install dependencies
 uv run maldoc --help                             # CLI help
 uv run maldoc run --attack summary_steer --format pdf                  # full pipeline against Demo-API
 uv run maldoc run --attack summary_steer --format pdf --target chatbot # full pipeline against Demo-Chatbot
+uv run maldoc run --attack-plus-format hidden_text:pdf,ocr_bait:image  # explicit attack:format pairs
 uv run maldoc generate --attack metadata --format docx                 # generate only
 uv run pytest                                    # unit tests
 uv run pytest -m integration                     # integration tests (needs Docker + Ollama)
@@ -74,10 +75,11 @@ BLACK_BOX=true docker compose up --build -d demo-chatbot
 7. **Output directories**: Generated documents go to `output/`. Reports go to `reports/`.
 8. **Report naming**: Reports use descriptive filenames: `{YYYYMMDD}_{HHMMSS}_{target}_{attack|multiple}_report.{json,md}` (`multiple` only when more than one attack is included in a consolidated run).
 9. **Report structure**: Markdown reports include an "Attack Summary" table (per-attack averages) when multiple attack types are present, above the per-test "All Results" table.
-10. **Batch runs**: CLI `run` accepts comma-separated `--attack` and `--format` values. Unsupported pairs are automatically skipped and recorded in report metadata. The compatibility matrix is in `src/maldoc/coverage.py`.
-11. **Report metadata**: Consolidated reports carry execution mode (`white_box`, `black_box`, or `mixed`), requested attacks/formats, and skipped combinations.
-12. **Black-box targets**: Missing `/extracted` and `/chunks` endpoints are valid. Adapters should degrade extraction/chunk scoring to `N/A` rather than fail outright. `/reset` is optional for generic HTTP targets and always available on the demo-chatbot.
-13. **PDF Unicode**: Use DejaVu TTF fonts (not Helvetica) for Unicode support in PDF generation.
+10. **Batch runs**: CLI `run` accepts comma-separated `--attack` and `--format` values (cross-product), or `--attack-plus-format` for explicit `attack:format` pairs. Unsupported pairs are automatically skipped and recorded in report metadata. The compatibility matrix is in `src/maldoc/coverage.py`.
+11. **Artifact cleanup**: `run` deletes generated output files by default after evaluation. Use `--keep-artifacts` to retain them. Other commands (`generate`, `evaluate`) do not delete output.
+12. **Report metadata**: Consolidated reports carry execution mode (`white_box`, `black_box`, or `mixed`), requested attacks/formats, and skipped combinations.
+13. **Black-box targets**: Missing `/extracted` and `/chunks` endpoints are valid. Adapters should degrade extraction/chunk scoring to `N/A` rather than fail outright. `/reset` is optional for generic HTTP targets and always available on the demo-chatbot.
+14. **PDF Unicode**: Use DejaVu TTF fonts (not Helvetica) for Unicode support in PDF generation.
 
 ## Key interfaces
 

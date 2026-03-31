@@ -201,10 +201,30 @@ def report(
     typer.echo(f"Report generated: {path}")
 
 
+def _parse_attack_plus_format(value: str) -> list[tuple[str, str]]:
+    """Parse attack:format pairs from comma-separated string."""
+    combos = []
+    for pair in value.split(","):
+        pair = pair.strip()
+        if ":" not in pair:
+            raise typer.BadParameter(
+                f"Invalid attack-plus-format pair '{pair}'. Expected format: attack:format"
+            )
+        atk, fmt = pair.split(":", 1)
+        atk, fmt = atk.strip(), fmt.strip()
+        if not atk or not fmt:
+            raise typer.BadParameter(
+                f"Invalid attack-plus-format pair '{pair}'. Both attack and format are required."
+            )
+        combos.append((atk, fmt))
+    return combos
+
+
 @app.command()
 def run(
-    attack: Annotated[str, typer.Option(help="Attack(s), comma-separated")],
+    attack: Annotated[str, typer.Option(help="Attack(s), comma-separated")] = "",
     format: Annotated[str, typer.Option(help="Format(s), comma-separated; see generate --help")] = "pdf",
+    attack_plus_format: Annotated[str, typer.Option(help="Explicit attack:format pairs, comma-separated (e.g. hidden_text:pdf,ocr_bait:image)")] = "",
     target: Annotated[str, typer.Option(help="Target adapter: demo, chatbot, http")] = "demo",
     target_url: Annotated[str, typer.Option(help="Target base URL (default: auto per target)")] = "",
     output_dir: Annotated[str, typer.Option(help="Output directory for generated documents")] = DEFAULT_OUTPUT_DIR,
@@ -212,11 +232,12 @@ def run(
     query: Annotated[str | None, typer.Option(help="Custom query for evaluation")] = None,
     template: Annotated[str, typer.Option(help="Document template")] = "memo",
     payload: Annotated[str | None, typer.Option(help="Custom payload text")] = None,
+    keep_artifacts: Annotated[bool, typer.Option(help="Keep generated documents after run (default: delete them)")] = False,
 ):
     """Run full pipeline: generate -> evaluate -> report.
 
-    Supports comma-separated attacks and formats to run multiple combos.
-    Results are consolidated into a single report.
+    Use --attack/--format for cross-product combos, or --attack-plus-format
+    for explicit attack:format pairs. Results are consolidated into a single report.
     """
     from maldoc.attacks import get_attack
     from maldoc.coverage import assess_attack_format
@@ -227,58 +248,74 @@ def run(
     from maldoc.report.json_report import generate_json_report, report_filename
     from maldoc.report.markdown_report import generate_markdown_report
 
-    attacks = [a.strip() for a in attack.split(",")]
-    formats = [f.strip() for f in format.split(",")]
+    if attack_plus_format and attack:
+        raise typer.BadParameter("Use --attack/--format or --attack-plus-format, not both.")
+    if not attack_plus_format and not attack:
+        raise typer.BadParameter("Provide --attack or --attack-plus-format.")
+
+    # Build combo list: either explicit pairs or cross-product
+    if attack_plus_format:
+        combos = _parse_attack_plus_format(attack_plus_format)
+        all_attacks = sorted(set(a for a, _ in combos))
+        all_formats = sorted(set(f for _, f in combos))
+    else:
+        attacks = [a.strip() for a in attack.split(",")]
+        formats = [f.strip() for f in format.split(",")]
+        combos = [(a, f) for a in attacks for f in formats]
+        all_attacks = attacks
+        all_formats = formats
+
     tmpl = get_template(template)
     resolved_url = _resolve_target_url(target, target_url)
     adapter = _get_adapter(target, resolved_url)
 
+    generated_files: list[Path] = []
     try:
         results = []
         skipped = []
-        total = len(attacks) * len(formats)
+        total = len(combos)
         current = 0
 
-        for atk_name in attacks:
-            for fmt in formats:
-                current += 1
-                typer.echo(f"[{current}/{total}] {atk_name} / {fmt}")
+        for atk_name, fmt in combos:
+            current += 1
+            typer.echo(f"[{current}/{total}] {atk_name} / {fmt}")
 
-                atk = get_attack(atk_name)
-                allowed, degraded, message = assess_attack_format(atk_name, fmt)
-                if not allowed:
-                    typer.echo(f"  Skipped: {message}")
-                    skipped.append(
-                        SkippedCombination(
-                            attack_name=atk_name,
-                            document_format=fmt,
-                            reason=message,
-                        )
+            atk = get_attack(atk_name)
+            allowed, degraded, message = assess_attack_format(atk_name, fmt)
+            if not allowed:
+                typer.echo(f"  Skipped: {message}")
+                skipped.append(
+                    SkippedCombination(
+                        attack_name=atk_name,
+                        document_format=fmt,
+                        reason=message,
                     )
-                    continue
-                if degraded:
-                    typer.echo(f"  Warning: {message}")
-                text = payload or atk.default_payload()
-                attack_result = atk.apply(text, tmpl)
-                doc_path = generate_document(attack_result, tmpl["title"], fmt, output_dir)
-                typer.echo(f"  Generated: {doc_path}")
+                )
+                continue
+            if degraded:
+                typer.echo(f"  Warning: {message}")
+            text = payload or atk.default_payload()
+            attack_result = atk.apply(text, tmpl)
+            doc_path = generate_document(attack_result, tmpl["title"], fmt, output_dir)
+            generated_files.append(Path(doc_path))
+            typer.echo(f"  Generated: {doc_path}")
 
-                for attempt in range(3):
-                    try:
-                        result = run_eval(adapter, attack_result, doc_path, query)
-                        break
-                    except Exception as exc:
-                        if attempt < 2 and _is_transient_eval_error(exc):
-                            import time
-                            typer.echo(f"  Retry {attempt + 1}/2 after error: {exc}")
-                            time.sleep(5)
-                        else:
-                            raise
-                results.append(result)
+            for attempt in range(3):
+                try:
+                    result = run_eval(adapter, attack_result, doc_path, query)
+                    break
+                except Exception as exc:
+                    if attempt < 2 and _is_transient_eval_error(exc):
+                        import time
+                        typer.echo(f"  Retry {attempt + 1}/2 after error: {exc}")
+                        time.sleep(5)
+                    else:
+                        raise
+            results.append(result)
 
-                for stage, score in result.scores.items():
-                    label = f"{score:.2f}" if score is not None else "N/A"
-                    typer.echo(f"  {stage}: {label}")
+            for stage, score in result.scores.items():
+                label = f"{score:.2f}" if score is not None else "N/A"
+                typer.echo(f"  {stage}: {label}")
 
         # Consolidated report
         cli_commands = _build_cli_commands(sys.argv)
@@ -287,8 +324,8 @@ def run(
             target=_target_label(target, resolved_url),
             results=results,
             cli_commands=cli_commands,
-            requested_attacks=attacks,
-            requested_formats=formats,
+            requested_attacks=all_attacks,
+            requested_formats=all_formats,
             skipped_combinations=skipped,
             execution_mode=_aggregate_execution_mode(results),
         )
@@ -303,6 +340,16 @@ def run(
         typer.echo(f"  {len(results)} tests consolidated into single report")
         if skipped:
             typer.echo(f"  {len(skipped)} combinations skipped")
+
+        # Clean up generated artifacts unless --keep-artifacts
+        if not keep_artifacts:
+            removed = 0
+            for f in generated_files:
+                if f.exists():
+                    f.unlink()
+                    removed += 1
+            if removed:
+                typer.echo(f"  {removed} artifact(s) removed (use --keep-artifacts to retain)")
     finally:
         adapter.close()
 

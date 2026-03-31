@@ -5,11 +5,12 @@ import importlib.util
 
 import httpx
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from maldoc.adapters.chatbot import ChatbotAdapter
 from maldoc.attacks.base import AttackResult
-from maldoc.cli import _get_adapter, _resolve_target_url, app
+from maldoc.cli import _get_adapter, _parse_attack_plus_format, _resolve_target_url, app
 from maldoc.evaluate.evidence import (
     ChunkEvidence,
     EvaluationResult,
@@ -536,3 +537,195 @@ class TestCli:
         assert "demo-chatbot" in called["command"]
         assert "Demo-API" in result.output
         assert "Demo-Chatbot" in result.output
+
+    def test_parse_attack_plus_format(self):
+        pairs = _parse_attack_plus_format("hidden_text:pdf,ocr_bait:image")
+        assert pairs == [("hidden_text", "pdf"), ("ocr_bait", "image")]
+
+    def test_parse_attack_plus_format_whitespace(self):
+        pairs = _parse_attack_plus_format(" hidden_text : pdf , ocr_bait : image ")
+        assert pairs == [("hidden_text", "pdf"), ("ocr_bait", "image")]
+
+    def test_parse_attack_plus_format_invalid(self):
+        with pytest.raises(typer.BadParameter, match="Expected format"):
+            _parse_attack_plus_format("hidden_text_pdf")
+
+    def test_parse_attack_plus_format_empty_part(self):
+        with pytest.raises(typer.BadParameter, match="Both attack and format"):
+            _parse_attack_plus_format(":pdf")
+
+    def test_run_attack_plus_format(self, tmp_path, monkeypatch):
+        class FakeAttack:
+            def default_payload(self):
+                return "DEFAULT PAYLOAD"
+
+            def apply(self, payload, template):
+                return AttackResult(
+                    visible_content=f"visible {payload}",
+                    hidden_content=payload,
+                    technique="hidden_text",
+                )
+
+        class FakeAdapter:
+            def close(self):
+                return None
+
+        captured = {}
+
+        def fake_json_report(report, path):
+            captured["report"] = report
+            return path
+
+        monkeypatch.setattr("maldoc.attacks.get_attack", lambda _name: FakeAttack())
+        monkeypatch.setattr("maldoc.cli._get_adapter", lambda _t, _u: FakeAdapter())
+        monkeypatch.setattr(
+            "maldoc.generate.generate_document",
+            lambda _attack_result, _title, _fmt, _output_dir: tmp_path / f"generated.{_fmt}",
+        )
+        monkeypatch.setattr(
+            "maldoc.evaluate.runner.evaluate",
+            lambda _adapter, _attack_result, _path, _query: _sample_eval_result(),
+        )
+        monkeypatch.setattr("maldoc.report.json_report.report_filename", lambda _r: "run_report")
+        monkeypatch.setattr(
+            "maldoc.report.json_report.generate_json_report",
+            fake_json_report,
+        )
+        monkeypatch.setattr(
+            "maldoc.report.markdown_report.generate_markdown_report",
+            lambda _report, path: path,
+        )
+
+        result = runner.invoke(app, [
+            "run",
+            "--attack-plus-format", "hidden_text:pdf,hidden_text:html",
+            "--output-dir", str(tmp_path),
+            "--reports-dir", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        assert "[1/2] hidden_text / pdf" in result.output
+        assert "[2/2] hidden_text / html" in result.output
+        assert set(captured["report"].requested_attacks) == {"hidden_text"}
+        assert set(captured["report"].requested_formats) == {"html", "pdf"}
+
+    def test_run_rejects_both_attack_and_attack_plus_format(self, tmp_path):
+        result = runner.invoke(app, [
+            "run",
+            "--attack", "hidden_text",
+            "--attack-plus-format", "hidden_text:pdf",
+            "--output-dir", str(tmp_path),
+            "--reports-dir", str(tmp_path),
+        ])
+        assert result.exit_code != 0
+        assert "not both" in result.output
+
+    def test_run_rejects_neither_attack_nor_attack_plus_format(self, tmp_path):
+        result = runner.invoke(app, [
+            "run",
+            "--output-dir", str(tmp_path),
+            "--reports-dir", str(tmp_path),
+        ])
+        assert result.exit_code != 0
+        assert "--attack or --attack-plus-format" in result.output
+
+    def test_run_cleans_artifacts_by_default(self, tmp_path, monkeypatch):
+        class FakeAttack:
+            def default_payload(self):
+                return "DEFAULT PAYLOAD"
+
+            def apply(self, payload, template):
+                return AttackResult(
+                    visible_content=f"visible {payload}",
+                    hidden_content=payload,
+                    technique="hidden_text",
+                )
+
+        class FakeAdapter:
+            def close(self):
+                return None
+
+        # Create a real file so cleanup can remove it
+        generated = tmp_path / "generated.pdf"
+        generated.write_text("fake doc")
+
+        monkeypatch.setattr("maldoc.attacks.get_attack", lambda _name: FakeAttack())
+        monkeypatch.setattr("maldoc.cli._get_adapter", lambda _t, _u: FakeAdapter())
+        monkeypatch.setattr(
+            "maldoc.generate.generate_document",
+            lambda _attack_result, _title, _fmt, _output_dir: generated,
+        )
+        monkeypatch.setattr(
+            "maldoc.evaluate.runner.evaluate",
+            lambda _adapter, _attack_result, _path, _query: _sample_eval_result(),
+        )
+        monkeypatch.setattr("maldoc.report.json_report.report_filename", lambda _r: "run_report")
+        monkeypatch.setattr(
+            "maldoc.report.json_report.generate_json_report",
+            lambda _report, path: path,
+        )
+        monkeypatch.setattr(
+            "maldoc.report.markdown_report.generate_markdown_report",
+            lambda _report, path: path,
+        )
+
+        result = runner.invoke(app, [
+            "run",
+            "--attack", "hidden_text",
+            "--format", "pdf",
+            "--output-dir", str(tmp_path),
+            "--reports-dir", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        assert "artifact(s) removed" in result.output
+        assert not generated.exists()
+
+    def test_run_keep_artifacts(self, tmp_path, monkeypatch):
+        class FakeAttack:
+            def default_payload(self):
+                return "DEFAULT PAYLOAD"
+
+            def apply(self, payload, template):
+                return AttackResult(
+                    visible_content=f"visible {payload}",
+                    hidden_content=payload,
+                    technique="hidden_text",
+                )
+
+        class FakeAdapter:
+            def close(self):
+                return None
+
+        generated = tmp_path / "generated.pdf"
+        generated.write_text("fake doc")
+
+        monkeypatch.setattr("maldoc.attacks.get_attack", lambda _name: FakeAttack())
+        monkeypatch.setattr("maldoc.cli._get_adapter", lambda _t, _u: FakeAdapter())
+        monkeypatch.setattr(
+            "maldoc.generate.generate_document",
+            lambda _attack_result, _title, _fmt, _output_dir: generated,
+        )
+        monkeypatch.setattr(
+            "maldoc.evaluate.runner.evaluate",
+            lambda _adapter, _attack_result, _path, _query: _sample_eval_result(),
+        )
+        monkeypatch.setattr("maldoc.report.json_report.report_filename", lambda _r: "run_report")
+        monkeypatch.setattr(
+            "maldoc.report.json_report.generate_json_report",
+            lambda _report, path: path,
+        )
+        monkeypatch.setattr(
+            "maldoc.report.markdown_report.generate_markdown_report",
+            lambda _report, path: path,
+        )
+
+        result = runner.invoke(app, [
+            "run",
+            "--attack", "hidden_text",
+            "--format", "pdf",
+            "--keep-artifacts",
+            "--output-dir", str(tmp_path),
+            "--reports-dir", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        assert "artifact(s) removed" not in result.output
+        assert generated.exists()

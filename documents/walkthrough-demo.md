@@ -101,6 +101,19 @@ uv run maldoc run \
 
 This produces 108 tests (14 attacks x 10 formats minus 32 unsupported pairs) and a single consolidated report with both an **Attack Summary** table (per-attack averages) and an **All Results** table (per-test details).
 
+For precise control over which pairs to test, use `--attack-plus-format` instead of the cross-product:
+
+```bash
+uv run maldoc run \
+  --attack-plus-format "hidden_text:pdf,ocr_bait:image,metadata:docx,summary_steer:html"
+```
+
+By default, `run` deletes generated documents after evaluation. Use `--keep-artifacts` to retain them:
+
+```bash
+uv run maldoc run --attack summary_steer --format pdf --keep-artifacts
+```
+
 You can also run individual attacks:
 
 ```bash

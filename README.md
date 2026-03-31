@@ -76,8 +76,8 @@ uv run maldoc run --attack "hidden_text,retrieval_poison,summary_steer" --format
 # Explicit attack:format pairs (no cross-product)
 uv run maldoc run --attack-plus-format "hidden_text:pdf,ocr_bait:image,metadata:docx"
 
-# Keep generated documents after evaluation (default: auto-deleted)
-uv run maldoc run --attack summary_steer --format pdf --keep-artifacts
+# Delete generated documents after evaluation (default: keep them)
+uv run maldoc run --attack summary_steer --format pdf --delete-artifacts
 
 # Test against the Demo-Chatbot
 uv run maldoc run --attack summary_steer --format pdf --target chatbot
@@ -152,7 +152,7 @@ uv run pytest                     # unit tests (no Docker/Ollama needed)
 uv run pytest -m integration      # integration tests (requires Docker + Ollama)
 ```
 
-Current local test suite: `195 passed`
+Current local test suite: `197 passed`
 
 ## Project structure
 
@@ -167,6 +167,6 @@ demo/             # Demo-API: FastAPI REST app (port 8000)
 demo-chatbot/     # Demo-Chatbot: FastAPI chatbot with browser UI (port 8001)
 shared_pipeline.py # Shared ingestion pipeline used by both demo services
 documents/        # Detailed documentation
-tests/            # Test suite (195 tests)
+tests/            # Test suite (197 tests)
 planning/         # Design docs
 ```

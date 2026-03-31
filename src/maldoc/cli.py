@@ -232,7 +232,7 @@ def run(
     query: Annotated[str | None, typer.Option(help="Custom query for evaluation")] = None,
     template: Annotated[str, typer.Option(help="Document template")] = "memo",
     payload: Annotated[str | None, typer.Option(help="Custom payload text")] = None,
-    keep_artifacts: Annotated[bool, typer.Option(help="Keep generated documents after run (default: delete them)")] = False,
+    delete_artifacts: Annotated[bool, typer.Option(help="Delete generated documents after run (default: keep them)")] = False,
 ):
     """Run full pipeline: generate -> evaluate -> report.
 
@@ -341,15 +341,15 @@ def run(
         if skipped:
             typer.echo(f"  {len(skipped)} combinations skipped")
 
-        # Clean up generated artifacts unless --keep-artifacts
-        if not keep_artifacts:
+        # Clean up generated artifacts only when explicitly requested.
+        if delete_artifacts:
             removed = 0
             for f in generated_files:
                 if f.exists():
                     f.unlink()
                     removed += 1
             if removed:
-                typer.echo(f"  {removed} artifact(s) removed (use --keep-artifacts to retain)")
+                typer.echo("  " + f"{removed} artifact(s) removed")
     finally:
         adapter.close()
 

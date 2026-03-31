@@ -16,7 +16,7 @@ This is a security research tool. Generated documents are adversarial by design.
 - `output/` — generated adversarial documents (gitignored)
 - `planning/` — design docs (PLAN.md, ARCHITECTURE.md, TASKS.md)
 - `shared_pipeline.py` — shared ingestion pipeline used by both demo services
-- `tests/` — pytest test suite (195 tests)
+- `tests/` — pytest test suite (197 tests)
 - See `planning/ARCHITECTURE.md` for full layout and data flow
 
 ## Commands
@@ -68,7 +68,7 @@ BLACK_BOX=true OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --bu
 - Report filenames follow the pattern `{YYYYMMDD}_{HHMMSS}_{target}_{attack|multiple}_report.{json,md}` (`multiple` only when results include more than one attack)
 - Markdown reports include execution mode, requested attacks/formats, skipped combinations, and an "Attack Summary" table when multiple attack types are present
 - CLI `run` command accepts comma-separated `--attack` and `--format` values (cross-product), or `--attack-plus-format` for explicit `attack:format` pairs; unsupported pairs are skipped automatically
-- CLI `run` command deletes generated artifacts by default; use `--keep-artifacts` to retain them
+- CLI `run` command keeps generated artifacts by default; use `--delete-artifacts` to remove them automatically
 - `src/maldoc/coverage.py` defines the attack/format compatibility matrix (supported, degraded, unsupported)
 - CLI uses `--output-dir` for generated documents, `--reports-dir` for reports
 - Demo-API defaults: `--target demo` (auto-resolves to `http://localhost:8000`)
@@ -87,7 +87,7 @@ BLACK_BOX=true OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --bu
 
 ## Testing
 
-- pytest for all tests (195 tests, 0 warnings)
+- pytest for all tests (197 tests, 0 warnings)
 - Unit tests must run without Docker or Ollama
 - Integration tests are marked with `@pytest.mark.integration`
 - Test files mirror source layout: `tests/test_attacks.py`, `tests/test_generators.py`, etc.

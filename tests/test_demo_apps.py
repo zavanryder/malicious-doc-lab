@@ -29,3 +29,10 @@ def test_chatbot_reset_route_is_not_gated_by_black_box_block():
     reset_index = content.index('@app.post("/reset")')
     black_box_index = content.index("if not BLACK_BOX:")
     assert reset_index < black_box_index
+
+
+def test_chatbot_reset_route_clears_history_and_pipeline_state():
+    content = CHATBOT_APP.read_text()
+    reset_block = content[content.index('@app.post("/reset")'):]
+    assert "conversation_history.clear()" in reset_block
+    assert "reset_state()" in reset_block

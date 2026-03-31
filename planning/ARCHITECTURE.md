@@ -67,7 +67,7 @@ Commands:
 | `maldoc run` | Generate -> evaluate -> report in one step |
 | `maldoc demo` | Start, stop, or reset the built-in demo services |
 
-`run` accepts comma-separated `--attack` and `--format` values (cross-product), or `--attack-plus-format` for explicit `attack:format` pairs. Unsupported combinations are skipped, echoed to the console, and stored in report metadata. By default, `run` deletes generated artifacts after evaluation; pass `--keep-artifacts` to retain them.
+`run` accepts comma-separated `--attack` and `--format` values (cross-product), or `--attack-plus-format` for explicit `attack:format` pairs. Unsupported combinations are skipped, echoed to the console, and stored in report metadata. By default, `run` keeps generated artifacts after evaluation; pass `--delete-artifacts` to remove them automatically.
 
 ### Attack Layer
 
@@ -239,7 +239,7 @@ Environment variables:
 
 Current local suite:
 
-- `195 passed`
+- `197 passed`
 
 Regression coverage now includes:
 
@@ -249,4 +249,4 @@ Regression coverage now includes:
 - shared demo pipeline structure
 - demo app threadpool usage and chatbot reset availability
 - `--attack-plus-format` parsing, validation, and pipeline execution
-- `--keep-artifacts` / default artifact cleanup behavior
+- `--delete-artifacts` / default artifact retention behavior

@@ -108,10 +108,10 @@ uv run maldoc run \
   --attack-plus-format "hidden_text:pdf,ocr_bait:image,metadata:docx,summary_steer:html"
 ```
 
-By default, `run` deletes generated documents after evaluation. Use `--keep-artifacts` to retain them:
+By default, `run` keeps generated documents after evaluation. Use `--delete-artifacts` to remove them automatically:
 
 ```bash
-uv run maldoc run --attack summary_steer --format pdf --keep-artifacts
+uv run maldoc run --attack summary_steer --format pdf --delete-artifacts
 ```
 
 You can also run individual attacks:

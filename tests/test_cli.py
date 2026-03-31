@@ -628,7 +628,7 @@ class TestCli:
         assert result.exit_code != 0
         assert "--attack or --attack-plus-format" in result.output
 
-    def test_run_cleans_artifacts_by_default(self, tmp_path, monkeypatch):
+    def test_run_keeps_artifacts_by_default(self, tmp_path, monkeypatch):
         class FakeAttack:
             def default_payload(self):
                 return "DEFAULT PAYLOAD"
@@ -676,10 +676,10 @@ class TestCli:
             "--reports-dir", str(tmp_path),
         ])
         assert result.exit_code == 0
-        assert "artifact(s) removed" in result.output
-        assert not generated.exists()
+        assert "artifact(s) removed" not in result.output
+        assert generated.exists()
 
-    def test_run_keep_artifacts(self, tmp_path, monkeypatch):
+    def test_run_delete_artifacts(self, tmp_path, monkeypatch):
         class FakeAttack:
             def default_payload(self):
                 return "DEFAULT PAYLOAD"
@@ -722,10 +722,10 @@ class TestCli:
             "run",
             "--attack", "hidden_text",
             "--format", "pdf",
-            "--keep-artifacts",
+            "--delete-artifacts",
             "--output-dir", str(tmp_path),
             "--reports-dir", str(tmp_path),
         ])
         assert result.exit_code == 0
-        assert "artifact(s) removed" not in result.output
-        assert generated.exists()
+        assert "artifact(s) removed" in result.output
+        assert not generated.exists()

@@ -208,7 +208,7 @@ uv run maldoc run \
   --target http --target-url https://client-app.example.com
 ```
 
-By default, `run` deletes generated artifacts after evaluation. Use `--keep-artifacts` if you need the documents for manual inspection or re-testing.
+By default, `run` keeps generated artifacts after evaluation. Use `--delete-artifacts` if you want them removed automatically.
 
 ### Report compilation
 

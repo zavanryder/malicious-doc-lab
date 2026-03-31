@@ -20,16 +20,32 @@ SUPPORTED_FORMATS_HELP = (
 )
 
 
+def _resolve_target_url(target: str, target_url: str) -> str:
+    """Resolve target URL, applying defaults when not explicitly provided."""
+    if target_url:
+        return target_url
+    defaults = {
+        "demo": "http://localhost:8000",
+        "chatbot": "http://localhost:8001",
+    }
+    return defaults.get(target, "http://localhost:8000")
+
+
 def _get_adapter(target: str, target_url: str):
     """Create an adapter instance by name."""
+    url = _resolve_target_url(target, target_url)
     if target == "demo":
         from maldoc.adapters.demo import DemoAdapter
 
-        return DemoAdapter(base_url=target_url)
+        return DemoAdapter(base_url=url)
+    if target == "chatbot":
+        from maldoc.adapters.chatbot import ChatbotAdapter
+
+        return ChatbotAdapter(base_url=url)
     if target == "http":
         from maldoc.adapters.http import HttpAdapter
 
-        return HttpAdapter(base_url=target_url)
+        return HttpAdapter(base_url=url)
     raise typer.BadParameter(f"Unknown target adapter: {target}")
 
 
@@ -46,8 +62,8 @@ def _build_cli_commands(argv: list[str]) -> list[str]:
 
 def _target_label(target: str, target_url: str) -> str:
     """Short label for the target, used in report filenames."""
-    if target == "demo":
-        return "demo"
+    if target in ("demo", "chatbot"):
+        return target
     return target_url.split("://")[-1].split("/")[0].replace(":", "_")
 
 
@@ -94,8 +110,8 @@ def generate(
 def evaluate(
     file: Annotated[str, typer.Option(help="Path to document to evaluate")],
     attack: Annotated[str, typer.Option(help="Attack class used to generate the document")],
-    target: Annotated[str, typer.Option(help="Target adapter: demo, http")] = "demo",
-    target_url: Annotated[str, typer.Option(help="Target base URL")] = "http://localhost:8000",
+    target: Annotated[str, typer.Option(help="Target adapter: demo, chatbot, http")] = "demo",
+    target_url: Annotated[str, typer.Option(help="Target base URL (default: auto per target)")] = "",
     query: Annotated[str | None, typer.Option(help="Custom query for evaluation")] = None,
     payload: Annotated[str | None, typer.Option(help="Payload used in the document")] = None,
     template: Annotated[str, typer.Option(help="Document template used for generation")] = "memo",
@@ -131,7 +147,8 @@ def evaluate(
 
         typer.echo(f"Reports: {json_path}, {md_path}")
         for stage, score in result.scores.items():
-            typer.echo(f"  {stage}: {score:.2f}")
+            label = f"{score:.2f}" if score is not None else "N/A"
+            typer.echo(f"  {stage}: {label}")
     finally:
         adapter.close()
 
@@ -163,8 +180,8 @@ def report(
 def run(
     attack: Annotated[str, typer.Option(help="Attack(s), comma-separated")],
     format: Annotated[str, typer.Option(help="Format(s), comma-separated; see generate --help")] = "pdf",
-    target: Annotated[str, typer.Option(help="Target adapter")] = "demo",
-    target_url: Annotated[str, typer.Option(help="Target base URL")] = "http://localhost:8000",
+    target: Annotated[str, typer.Option(help="Target adapter: demo, chatbot, http")] = "demo",
+    target_url: Annotated[str, typer.Option(help="Target base URL (default: auto per target)")] = "",
     output_dir: Annotated[str, typer.Option(help="Output directory for generated documents")] = DEFAULT_OUTPUT_DIR,
     reports_dir: Annotated[str, typer.Option(help="Output directory for reports")] = DEFAULT_REPORTS_DIR,
     query: Annotated[str | None, typer.Option(help="Custom query for evaluation")] = None,
@@ -226,7 +243,8 @@ def run(
                 results.append(result)
 
                 for stage, score in result.scores.items():
-                    typer.echo(f"  {stage}: {score:.2f}")
+                    label = f"{score:.2f}" if score is not None else "N/A"
+                    typer.echo(f"  {stage}: {label}")
 
         # Consolidated report
         cli_commands = _build_cli_commands(sys.argv)
@@ -268,13 +286,17 @@ def demo(
 
     compose_file = _resolve_compose_file()
     if action == "start":
-        typer.echo("Starting demo app...")
+        typer.echo("Starting demo services...")
         subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "up", "--build", "-d", "demo-app"],
+            [
+                "docker", "compose", "-f", str(compose_file),
+                "up", "--build", "-d", "demo-app", "demo-chatbot",
+            ],
             check=True,
         )
-        typer.echo("Demo app started at http://localhost:8000")
+        typer.echo("Demo-API started at http://localhost:8000")
+        typer.echo("Demo-Chatbot started at http://localhost:8001")
     else:
-        typer.echo("Stopping demo app...")
+        typer.echo("Stopping demo services...")
         subprocess.run(["docker", "compose", "-f", str(compose_file), "down"], check=True)
-        typer.echo("Demo app stopped.")
+        typer.echo("Demo services stopped.")

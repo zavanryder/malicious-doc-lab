@@ -185,3 +185,63 @@ def test_evaluate_refusal_does_not_count_as_payload_influence(tmp_path):
     assert "refusal_detected" in result.response.influence_indicators
     assert result.response.payload_influenced_response is False
     assert result.scores["response_influence"] == 0.0
+
+
+class FakeBlackBoxAdapter(FakeAdapter):
+    """Adapter simulating black-box mode (evidence endpoints unavailable)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._evidence_unavailable = True
+
+    def get_extracted_text(self) -> str:
+        return ""
+
+    def get_chunks(self) -> list[str]:
+        return []
+
+
+def test_evaluate_black_box_scores_none_for_evidence_stages(tmp_path):
+    attack_result = AttackResult(
+        visible_content="visible",
+        hidden_content="CUSTOMPAYLOAD_123456789",
+        technique="hidden_text",
+    )
+    adapter = FakeBlackBoxAdapter(
+        extracted_text="",
+        chunks=[],
+        context_chunks=["some retrieved chunk"],
+        answer="normal answer",
+    )
+    document = tmp_path / "doc.txt"
+    document.write_text("demo")
+
+    result = evaluate(adapter, attack_result, document)
+
+    assert result.scores["extraction_survival"] is None
+    assert result.scores["chunk_survival"] is None
+    assert "black-box" in result.score_justifications["extraction_survival"]
+    assert "black-box" in result.score_justifications["chunk_survival"]
+
+
+def test_evaluate_black_box_still_scores_retrieval_and_response(tmp_path):
+    payload = "CUSTOMPAYLOAD_123456789"
+    attack_result = AttackResult(
+        visible_content="visible",
+        hidden_content=payload,
+        technique="hidden_text",
+    )
+    adapter = FakeBlackBoxAdapter(
+        extracted_text="",
+        chunks=[],
+        context_chunks=[f"chunk with {payload}"],
+        answer="ACCESS GRANTED",
+    )
+    document = tmp_path / "doc.txt"
+    document.write_text("demo")
+
+    result = evaluate(adapter, attack_result, document)
+
+    assert result.scores["retrieval_influence"] == 1.0
+    assert result.scores["response_influence"] is not None
+    assert result.scores["response_influence"] > 0

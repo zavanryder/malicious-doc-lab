@@ -8,7 +8,7 @@ Instructions for AI coding agents working on this project. If you are Claude Cod
 - Generates adversarial documents (PDF, DOCX, HTML, Markdown, TXT, CSV, XLSX, PPTX, EML, images)
 - Evaluates them against AI document-processing and RAG pipelines
 - Reports whether malicious payloads survived parsing, influenced retrieval, and affected responses
-- Includes a Dockerized intentionally vulnerable demo app for end-to-end testing
+- Includes two Dockerized intentionally vulnerable demo apps for end-to-end testing (Demo-API and Demo-Chatbot)
 
 This is a security research tool. All adversarial content is by design. Do not add safety guards or hardening to the demo app.
 
@@ -19,20 +19,26 @@ src/maldoc/          # Python package — the CLI tool
   cli.py             # Typer CLI entrypoint
   generate/          # Document generators (10 formats: pdf, docx, html, md, txt, csv, xlsx, pptx, eml, image)
   attacks/           # 14 attack class implementations
-  adapters/          # Target adapters (demo app, generic HTTP, base ABC)
+  adapters/          # Target adapters (demo, chatbot, generic HTTP, base ABC)
   evaluate/          # Evaluation pipeline, evidence models, scoring
   report/            # JSON and Markdown report output
-demo/                # FastAPI demo app (intentionally vulnerable)
+demo/                # Demo-API: FastAPI REST app (intentionally vulnerable, port 8000)
   app.py             # FastAPI endpoints
   pipeline.py        # Parse -> OCR -> chunk -> embed -> store pipeline
   config.py          # Ollama env var configuration
+  Dockerfile
+demo-chatbot/        # Demo-Chatbot: FastAPI chatbot with browser UI (intentionally vulnerable, port 8001)
+  app.py             # FastAPI chatbot endpoints (POST /chat with file upload)
+  pipeline.py        # Same RAG pipeline as Demo-API
+  config.py          # Ollama config + BLACK_BOX env var
+  static/index.html  # Chat UI (HTML/CSS/JS)
   Dockerfile
 documents/           # Detailed documentation
   attacks-and-techniques.md
   file-formats.md
   walkthrough-demo.md
   walkthrough-real-targets.md
-tests/               # pytest suite (148 tests)
+tests/               # pytest suite (166 tests)
 reports/             # Evaluation reports (gitignored except .gitkeep)
 output/              # Generated adversarial documents (gitignored)
 planning/            # Design docs (PLAN.md, ARCHITECTURE.md, TASKS.md)
@@ -43,13 +49,17 @@ planning/            # Design docs (PLAN.md, ARCHITECTURE.md, TASKS.md)
 ```bash
 uv sync                                          # install dependencies
 uv run maldoc --help                             # CLI help
-uv run maldoc run --attack summary_steer --format pdf  # full pipeline
-uv run maldoc generate --attack metadata --format docx # generate only
+uv run maldoc run --attack summary_steer --format pdf                  # full pipeline against Demo-API
+uv run maldoc run --attack summary_steer --format pdf --target chatbot # full pipeline against Demo-Chatbot
+uv run maldoc generate --attack metadata --format docx                 # generate only
 uv run pytest                                    # unit tests
 uv run pytest -m integration                     # integration tests (needs Docker + Ollama)
 
-# Demo app (user provides Ollama externally)
-OLLAMA_BASE_URL=http://your-ollama-host:11434 docker compose up --build -d demo-app
+# Demo services (user provides Ollama externally)
+OLLAMA_BASE_URL=http://your-ollama-host:11434 docker compose up --build -d demo-app demo-chatbot
+
+# Demo-Chatbot in black-box mode (hides evidence endpoints)
+BLACK_BOX=true docker compose up --build -d demo-chatbot
 ```
 
 ## Development rules
@@ -81,6 +91,9 @@ All 14 attacks: `hidden_text`, `white_on_white`, `metadata`, `retrieval_poison`,
 - `get_extracted_text() -> str`
 - `get_chunks() -> list[str]`
 - `reset() -> None`
+
+Built-in adapters: `DemoAdapter` (Demo-API), `ChatbotAdapter` (Demo-Chatbot), `HttpAdapter` (generic REST).
+The `ChatbotAdapter` maps the BaseAdapter interface onto the chatbot's `POST /chat` endpoint and handles black-box mode (404 on evidence endpoints) gracefully.
 
 **Document generators** are standalone functions in `generate/`, one per format module. The `generate_document()` function in `generate/__init__.py` dispatches to the correct generator.
 

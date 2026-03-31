@@ -5,8 +5,9 @@ import importlib.util
 
 from typer.testing import CliRunner
 
+from maldoc.adapters.chatbot import ChatbotAdapter
 from maldoc.attacks.base import AttackResult
-from maldoc.cli import app
+from maldoc.cli import _get_adapter, _resolve_target_url, app
 from maldoc.evaluate.evidence import (
     ChunkEvidence,
     EvaluationResult,
@@ -327,3 +328,38 @@ class TestCli:
             "-f",
             str(compose_path),
         ]
+
+    def test_get_adapter_chatbot(self):
+        adapter = _get_adapter("chatbot", "http://localhost:8001")
+        assert isinstance(adapter, ChatbotAdapter)
+        assert adapter.base_url == "http://localhost:8001"
+        adapter.close()
+
+    def test_resolve_target_url_defaults(self):
+        assert _resolve_target_url("demo", "") == "http://localhost:8000"
+        assert _resolve_target_url("chatbot", "") == "http://localhost:8001"
+        assert _resolve_target_url("http", "") == "http://localhost:8000"
+
+    def test_resolve_target_url_explicit(self):
+        assert _resolve_target_url("demo", "http://custom:9000") == "http://custom:9000"
+        assert _resolve_target_url("chatbot", "http://custom:9001") == "http://custom:9001"
+
+    def test_demo_start_starts_both_services(self, tmp_path, monkeypatch):
+        compose_path = tmp_path / "docker-compose.yml"
+        compose_path.write_text("services: {}")
+        called = {}
+
+        def fake_run(command, check):
+            called["command"] = command
+            return None
+
+        monkeypatch.setattr("maldoc.cli._resolve_compose_file", lambda: compose_path)
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        result = runner.invoke(app, ["demo", "start"])
+
+        assert result.exit_code == 0
+        assert "demo-app" in called["command"]
+        assert "demo-chatbot" in called["command"]
+        assert "Demo-API" in result.output
+        assert "Demo-Chatbot" in result.output

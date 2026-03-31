@@ -49,7 +49,7 @@ class EvaluationResult(BaseModel):
     chunking: ChunkEvidence
     retrieval: RetrievalEvidence
     response: ResponseEvidence
-    scores: dict[str, float]
+    scores: dict[str, float | None]
     score_justifications: dict[str, str] = {}
 
 

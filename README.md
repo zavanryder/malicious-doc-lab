@@ -10,11 +10,17 @@ Generates malicious documents, evaluates them against AI document-processing / R
 # Install
 uv sync
 
-# Start the demo app (requires Docker + Ollama running)
-docker compose up --build -d demo-app
+# Start demo services (requires Docker + Ollama running)
+docker compose up --build -d demo-app demo-chatbot
 
-# Run full pipeline -- generates a document, evaluates it, produces reports
+# Run full pipeline against Demo-API
 uv run maldoc run --attack retrieval_poison --format pdf
+
+# Run full pipeline against Demo-Chatbot
+uv run maldoc run --attack retrieval_poison --format pdf --target chatbot
+
+# Open Demo-Chatbot in browser for manual testing
+# http://localhost:8001
 
 # View report
 ls reports/*_report.md
@@ -35,7 +41,7 @@ ollama pull nomic-embed-text
 For a remote Ollama instance:
 
 ```bash
-OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --build -d demo-app
+OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --build -d demo-app demo-chatbot
 ```
 
 ## CLI
@@ -45,7 +51,7 @@ uv run maldoc generate   # Generate adversarial documents
 uv run maldoc evaluate   # Evaluate a document against a target
 uv run maldoc report     # Generate report from evaluation results
 uv run maldoc run        # Full pipeline: generate -> evaluate -> report
-uv run maldoc demo       # Manage the demo app (start/stop/reset)
+uv run maldoc demo       # Manage demo services (start/stop/reset)
 ```
 
 ### Examples
@@ -63,6 +69,9 @@ uv run maldoc run --attack retrieval_poison --format pdf \
 
 # Run multiple attacks and formats in one consolidated report
 uv run maldoc run --attack "hidden_text,retrieval_poison,summary_steer" --format "pdf,docx"
+
+# Test against the Demo-Chatbot
+uv run maldoc run --attack summary_steer --format pdf --target chatbot
 
 # Test against a custom target
 uv run maldoc run --attack metadata --format docx \
@@ -137,11 +146,12 @@ uv run pytest -m integration      # integration tests (requires Docker + Ollama)
 src/maldoc/       # Python package
   attacks/        # 14 attack class implementations
   generate/       # Document generators (13 formats)
-  adapters/       # Target adapters (demo, HTTP, custom)
+  adapters/       # Target adapters (demo, chatbot, HTTP, custom)
   evaluate/       # Evaluation pipeline and scoring
   report/         # JSON and Markdown report generators
-demo/             # FastAPI demo app (intentionally vulnerable)
+demo/             # Demo-API: FastAPI REST app (port 8000)
+demo-chatbot/     # Demo-Chatbot: FastAPI chatbot with browser UI (port 8001)
 documents/        # Detailed documentation
-tests/            # Test suite (148 tests)
+tests/            # Test suite (166 tests)
 planning/         # Design docs
 ```

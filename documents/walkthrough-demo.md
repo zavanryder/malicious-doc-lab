@@ -1,6 +1,11 @@
-# Walkthrough: Demo Application
+# Walkthrough: Demo Applications
 
-This walkthrough shows a complete end-to-end test using the built-in demo application. The demo app is an intentionally vulnerable FastAPI service with a full RAG pipeline (parse, OCR, chunk, embed, retrieve, generate).
+This walkthrough shows complete end-to-end tests using the built-in demo applications. There are two demo targets:
+
+- **Demo-API** (`--target demo`, port 8000): REST-style document processing API
+- **Demo-Chatbot** (`--target chatbot`, port 8001): Conversational chatbot with browser UI and file upload
+
+Both are intentionally vulnerable FastAPI services with a full RAG pipeline (parse, OCR, chunk, embed, retrieve, generate).
 
 ## Prerequisites
 
@@ -21,21 +26,26 @@ If Ollama is running on a remote host:
 export OLLAMA_BASE_URL=http://192.168.68.61:11434
 ```
 
-## Step 1: Start the demo app
+## Step 1: Start the demo services
 
 ```bash
-# Using the maldoc CLI
+# Using the maldoc CLI (starts both Demo-API and Demo-Chatbot)
 uv run maldoc demo start
 
 # Or directly with Docker Compose
-docker compose up --build -d demo-app
+docker compose up --build -d demo-app demo-chatbot
 
 # For a remote Ollama instance, pass the env var
-OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --build -d demo-app
+OLLAMA_BASE_URL=http://192.168.68.61:11434 docker compose up --build -d demo-app demo-chatbot
 
-# Verify it's running
+# Verify both are running
 curl http://localhost:8000/health
 # {"status":"ok"}
+curl http://localhost:8001/health
+# {"status":"ok"}
+
+# Open the Demo-Chatbot in a browser for manual interaction
+# http://localhost:8001
 ```
 
 ## Step 2: Run a full pipeline test
@@ -157,13 +167,68 @@ uv run maldoc run \
   --query "What discounts are currently available?"
 ```
 
-## Step 7: Clean up
+## Step 7: Test with the Demo-Chatbot
+
+The Demo-Chatbot provides the same RAG pipeline but through a conversational interface. You can interact with it via the browser or via `maldoc`.
+
+### Browser interaction
+
+Open `http://localhost:8001` in your browser. You'll see a chat interface where you can:
+- Type messages and get AI responses
+- Upload files using the paperclip button
+- Upload a malicious document and then ask questions about it
+
+### Automated testing with maldoc
 
 ```bash
-# Reset the demo app's ingested data
+# Run a full pipeline test against the chatbot
+uv run maldoc run --attack retrieval_poison --format pdf --target chatbot
+
+# Run multiple attacks
+uv run maldoc run \
+  --attack "summary_steer,retrieval_poison,metadata" \
+  --format "pdf,docx" \
+  --target chatbot
+```
+
+The `ChatbotAdapter` sends files and queries through the chatbot's `POST /chat` endpoint, just like a real user would interact with a chatbot.
+
+### Black-box mode
+
+Real chatbots don't expose internal evidence endpoints. To simulate this, restart the chatbot in black-box mode:
+
+```bash
+BLACK_BOX=true docker compose up --build -d demo-chatbot
+```
+
+In black-box mode:
+- The `/extracted`, `/chunks`, and `/reset` endpoints are hidden (return 404)
+- The `ChatbotAdapter` handles this gracefully
+- Extraction and chunking scores show as "N/A" in reports
+- Retrieval and response scores are still measured from the chat responses
+
+```bash
+# Test in black-box mode
+uv run maldoc run --attack summary_steer --format pdf --target chatbot
+# Output will show:
+#   extraction_survival: N/A
+#   chunk_survival: N/A
+#   retrieval_influence: 1.00
+#   response_influence: 0.67
+```
+
+To return to normal mode:
+```bash
+BLACK_BOX=false docker compose up --build -d demo-chatbot
+```
+
+## Step 8: Clean up
+
+```bash
+# Reset the Demo-API's ingested data
 uv run maldoc demo reset
 
-# Stop the demo app
+# Stop all demo services
 uv run maldoc demo stop
 ```
 

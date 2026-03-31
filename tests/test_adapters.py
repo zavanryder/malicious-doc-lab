@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from maldoc.adapters.base import BaseAdapter, QueryResult, UploadResult
+from maldoc.adapters.chatbot import ChatbotAdapter
 from maldoc.adapters.demo import DemoAdapter
 from maldoc.adapters.http import HttpAdapter
 
@@ -76,6 +77,103 @@ class TestDemoAdapter:
 
     def test_close(self):
         adapter = DemoAdapter()
+        adapter.close()
+        assert adapter.client.is_closed
+
+
+class TestChatbotAdapter:
+    def test_init_default_url(self):
+        adapter = ChatbotAdapter()
+        assert adapter.base_url == "http://localhost:8001"
+
+    def test_init_custom_url(self):
+        adapter = ChatbotAdapter(base_url="http://example.com:9001/")
+        assert adapter.base_url == "http://example.com:9001"
+
+    def test_upload_via_chat(self, tmp_path, httpx_mock):
+        httpx_mock.add_response(
+            url="http://localhost:8001/chat",
+            json={
+                "role": "assistant",
+                "content": "Document analyzed.",
+                "sources": [],
+                "extracted_length": 200,
+                "num_chunks": 4,
+            },
+        )
+        adapter = ChatbotAdapter()
+        test_file = tmp_path / "test.pdf"
+        test_file.write_bytes(b"fake pdf content")
+        result = adapter.upload(test_file)
+        assert isinstance(result, UploadResult)
+        assert result.filename == "test.pdf"
+        assert result.extracted_length == 200
+        assert result.num_chunks == 4
+
+    def test_query_via_chat(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://localhost:8001/chat",
+            json={
+                "role": "assistant",
+                "content": "The answer is 42.",
+                "sources": ["chunk1", "chunk2"],
+                "model": "llama3.2",
+            },
+        )
+        adapter = ChatbotAdapter()
+        result = adapter.query("What is the answer?")
+        assert isinstance(result, QueryResult)
+        assert result.answer == "The answer is 42."
+        assert result.context_chunks == ["chunk1", "chunk2"]
+
+    def test_get_extracted_text(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://localhost:8001/extracted",
+            json={"extracted_text": "some text"},
+        )
+        adapter = ChatbotAdapter()
+        text = adapter.get_extracted_text()
+        assert text == "some text"
+        assert not adapter._evidence_unavailable
+
+    def test_get_extracted_text_black_box(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://localhost:8001/extracted",
+            status_code=404,
+        )
+        adapter = ChatbotAdapter()
+        text = adapter.get_extracted_text()
+        assert text == ""
+        assert adapter._evidence_unavailable
+
+    def test_get_chunks_black_box(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://localhost:8001/chunks",
+            status_code=404,
+        )
+        adapter = ChatbotAdapter()
+        chunks = adapter.get_chunks()
+        assert chunks == []
+        assert adapter._evidence_unavailable
+
+    def test_reset(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://localhost:8001/reset",
+            json={"status": "reset"},
+        )
+        adapter = ChatbotAdapter()
+        adapter.reset()  # Should not raise
+
+    def test_reset_black_box(self, httpx_mock):
+        httpx_mock.add_response(
+            url="http://localhost:8001/reset",
+            status_code=404,
+        )
+        adapter = ChatbotAdapter()
+        adapter.reset()  # Should not raise
+
+    def test_close(self):
+        adapter = ChatbotAdapter()
         adapter.close()
         assert adapter.client.is_closed
 

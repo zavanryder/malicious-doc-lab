@@ -200,3 +200,86 @@ class TestMarkdownReport:
         generate_markdown_report(consolidated_report, path)
         content = path.read_text()
         assert "## Appendix: CLI Commands" not in content
+
+    def test_black_box_none_scores_show_na(self, tmp_path):
+        result = EvaluationResult(
+            attack_name="hidden_text",
+            document_format="pdf",
+            document_path="output/test.pdf",
+            extraction=ExtractionEvidence(
+                extracted_text="",
+                payload_found_in_text=False,
+                payload_fragments=[],
+            ),
+            chunking=ChunkEvidence(
+                chunks=[], num_chunks=0, chunks_containing_payload=[]
+            ),
+            retrieval=RetrievalEvidence(
+                query="q",
+                retrieved_chunks=["chunk"],
+                payload_found_in_retrieval=True,
+            ),
+            response=ResponseEvidence(
+                query="q",
+                response="ACCESS GRANTED",
+                payload_influenced_response=True,
+                influence_indicators=["phrase_detected: access granted"],
+            ),
+            scores={
+                "extraction_survival": None,
+                "chunk_survival": None,
+                "retrieval_influence": 1.0,
+                "response_influence": 0.33,
+            },
+            score_justifications={
+                "extraction_survival": "Evidence not available (black-box mode)",
+                "chunk_survival": "Evidence not available (black-box mode)",
+            },
+        )
+        report = ConsolidatedReport(
+            timestamp=datetime(2026, 3, 30, 12, 0, 0),
+            target="chatbot",
+            results=[result],
+        )
+        path = tmp_path / "report.md"
+        generate_markdown_report(report, path)
+        content = path.read_text()
+        assert "N/A" in content
+        assert "black-box" in content
+
+    def test_json_roundtrip_with_none_scores(self, tmp_path):
+        result = EvaluationResult(
+            attack_name="hidden_text",
+            document_format="pdf",
+            document_path="output/test.pdf",
+            extraction=ExtractionEvidence(
+                extracted_text="", payload_found_in_text=False, payload_fragments=[]
+            ),
+            chunking=ChunkEvidence(
+                chunks=[], num_chunks=0, chunks_containing_payload=[]
+            ),
+            retrieval=RetrievalEvidence(
+                query="q", retrieved_chunks=[], payload_found_in_retrieval=False
+            ),
+            response=ResponseEvidence(
+                query="q", response="ok", payload_influenced_response=False,
+                influence_indicators=[],
+            ),
+            scores={
+                "extraction_survival": None,
+                "chunk_survival": None,
+                "retrieval_influence": 0.0,
+                "response_influence": 0.0,
+            },
+        )
+        report = ConsolidatedReport(
+            timestamp=datetime(2026, 3, 30, 12, 0, 0),
+            target="chatbot",
+            results=[result],
+        )
+        path = tmp_path / "report.json"
+        generate_json_report(report, path)
+        loaded = ConsolidatedReport.model_validate_json(path.read_text())
+        assert loaded.results[0].scores["extraction_survival"] is None
+        assert loaded.results[0].scores["chunk_survival"] is None
+        assert loaded.results[0].scores["retrieval_influence"] == 0.0

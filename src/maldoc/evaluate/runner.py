@@ -319,18 +319,23 @@ def evaluate(
     )
 
     # Step 6: Score with justifications
+    black_box = getattr(adapter, "_evidence_unavailable", False)
     stage_scorers = {
         "extraction_survival": (score_extraction, extraction),
         "chunk_survival": (score_chunking, chunking),
         "retrieval_influence": (score_retrieval, retrieval),
         "response_influence": (score_response, response),
     }
-    scores = {}
+    scores: dict[str, float | None] = {}
     score_justifications = {}
     for stage, (scorer, evidence) in stage_scorers.items():
-        score, why = scorer(evidence)
-        scores[stage] = score
-        score_justifications[stage] = why
+        if black_box and stage in ("extraction_survival", "chunk_survival"):
+            scores[stage] = None
+            score_justifications[stage] = "Evidence not available (black-box mode)"
+        else:
+            score, why = scorer(evidence)
+            scores[stage] = score
+            score_justifications[stage] = why
 
     return EvaluationResult(
         attack_name=attack_result.technique,
